@@ -1,0 +1,193 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*.  
+
+
+This is an attempt to recreate the Data Science homework that I completed 6 years ago. I will be re-doing everything within both R and Python to demonstrate versatility and differences between the two programs. 
+
+For this, I will be downloading the UBSprices dataset from the ALR4 package. I will look at the summary statistics first to see fi there any any potential transformations that may be had. 
+
+```{r}
+library(alr4)
+
+summary(UBSprices)
+
+
+```
+Now looking at the head of the data, we have 6 variables that deal with the prices of items depending on the year and country. 
+
+
+
+```{r}
+head(UBSprices)
+```
+Now to plot bigmac2009 against bigmac2003
+
+
+```{r}
+plot(bigmac2009~bigmac2003, data=UBSprices)
+```
+looking at the plot, there seems to be a significant case of non-constant variance. Not only that, looking back at the summary statistics, we may have ranges that go over more than one order, so we will add log transformation in the predictor variable as well as the resposne. We will fit a regression line in red to see how well it fits the data. 
+
+```{r}
+fitline <- lm(log(bigmac2009)~log(bigmac2003), data = UBSprices)
+plot(log(bigmac2009)~log(bigmac2003), data=UBSprices)
+abline(fitline, col="red")
+```
+The log transformations seems to have significantly fixed the variances of the data to a more homoscedastic one. The red line from the regression that we fit, seems to fig the data pretty well. Now it is time to read the variable and see what it tells us. 
+
+
+```{r}
+summary(fitline)
+
+```
+According to the summary of the model, when there are no units for the measure of the log of bigmac2003 or minutes of labor recorded, the log minutes of bigmac2009 will be .64. If there is a 1 minute unit increase on the log of bigmac2003, then the log of bigmac2009 will increase by .80%. The log of bigmac2003 seems to be significant as well as we fail to reject the null at any criterion level other than 0. 
+
+
+For the next problem, we will be looking at the oldfaith data set. We are going to see the relationship between the Interval between eruptions of geysers and if they are related to the Duration of each eruption. First, as always, we will do exploratory data exploration before fitting the model. 
+
+```{r}
+head(oldfaith)
+
+```
+
+We see we only have two variables, Now let's look at the summary statistics to see if there are any possible transformations we need to perform. 
+
+```{r}
+summary(oldfaith)
+```
+Nothing seems out of the ordinary, but we may need to do a transformation on the duration variable as its range seems to cover two orders. 
+
+
+```{r}
+plot(oldfaith$Duration, oldfaith$Interval, xlab= "Duration", ylab="Interval")
+```
+
+```{r}
+oldfaithmodel <- lm(Interval~Duration, data=oldfaith)
+summary(oldfaithmodel)
+```
+Looking at the summary of the model, Duration seems to be a significant variable in relation to the Interval of a geyser eruption. It says that for every 1 second increase in the duration of an eruption, the interval between eruptions increase by .18. Now we will create predictions intervals using this model. We will predict on the mean using confidence intervals and then we will predict on actual data points. We will predict where a duration of 20 seconds will land us. 
+
+```{r}
+datapred <- predict(oldfaithmodel, newdata=data.frame(Duration=250), interval="prediction", se.fit=TRUE)
+datapred
+```
+Here we can see that the interval is between 66.35 and 90.05 with the prediction at 78.203. Now lets do a prediction within the confines of the mean model itself. 
+
+```{r}
+grid <- seq(0, 300, 1) 
+
+plot(oldfaith$Duration, oldfaith$Interval, xlab="Duration", ylab="Interval")
+abline(oldfaithmodel, col="red")
+lines(x=grid, y=predict(oldfaithmodel, newdata=data.frame(Duration=grid), interval="prediction")[,2], col="green")
+lines(x=grid, y=predict(oldfaithmodel, newdata=data.frame(Duration=grid), interval="prediction")[,3], col="green")
+
+
+```
+
+
+```{r}
+predict(oldfaithmodel, newdata=data.frame(Duration=250), interval = "confidence", se.fit=TRUE)
+```
+```{r}
+
+grid2 <- seq(0, 300, 1)
+plot(oldfaith$Duration, oldfaith$Interval, xlab="Duration", ylab="Interval")
+abline(oldfaithmodel, col="red")
+lines(x=grid2, y=predict(oldfaithmodel, newdata=data.frame(Duration=grid2), interval="confidence")[,2], col="green")
+lines(x=grid2, y=predict(oldfaithmodel, newdata=data.frame(Duration=grid2), interval="confidence")[,3], col="green")
+```
+
+
+Here we see that our prediction falls at 78.203 seconds again, however since we are only predicting the range of the mean, it is a smaller range of between 77.37 and 79.04 seconds. We can see that the prediction within confidence is more tight and robust because the variance on the mean is much less than the variance on data point we have never seen. I can confidently say that I would tell a customer that, with 95% confidence, the interval for a geyser that erupted for 250 seconds will fall between 77.37 and 79.04 minutes before the next eruption on average, but the actual interval can be anywhere between 66.35 to 90.05 minutes.
+
+
+
+For our next problem, we will be looking at UN data to look at fertility as the response to a linear relationship. Fertility, in this context, is the amount of children per woman. We will also be using ppgd in log form as well as the percent of urban area ina  society. 
+
+```{r}
+head(UN11)
+```
+```{r}
+summary(UN11)
+```
+Just looking at the variables we have, we can already see that ppgdp will cause us problems if we do not transform for it as it goes over several orders. 
+
+```{r}
+fertilityfit <- lm(fertility~log(ppgdp)+pctUrban, data=UN11)
+summary(fertilityfit)
+```
+Looking at the coefficients of the model that we have fit, it seems as if the the log of ppgdp is significant, where else the p value for pctUrban shows that it is not significant. Both show negative relationships to the response variable as well. For the log of ppggd, it tells us that for a 1% increase in the log of ppgd associates with a decrease of .00615 in the fertility per woman. If the pctUrban amounted to anything, it would say that for every unit increase of the pctUrban variable results in a decrease of .00044 of fertility per woman. Let's look at the av plots as well to further confirm what the summary is telling us. The avPlots tell us, with all other variables in the model, does this model explain any other variation.
+
+```{r}
+avPlots(fertilityfit)
+```
+We see that the the pctUrban has a flat slope, meaning it explains hardly any other variations with the other variables in the model taken into account. This agrees with the p-value that we saw. 
+
+
+The next problem we are going to look at transaction data where time will be the response. We will do some data wrangling to look at different combinations of transactions and how they relate to time. 
+
+```{r}
+library(car)
+
+Transact$a <- (Transact$t1 + Transact$t2)/2
+Transact$d <- Transact$t1 - Transact$t2
+head(Transact)
+```
+
+```{r}
+summary(Transact)
+```
+
+So, we went ahead and created two new variables, one is the average of the transaction 1 and 2, and the other is the difference between those same variables. The average is under variable "a" and the difference is under variable "d". Looking at the summary statistics, it seems as if we may need to so some transformation, but for this purpose we will ignore that for now. 
+
+We will start off by fitting four different models to compare using these variables. 
+
+```{r}
+firstfit <- lm(time~t1+t2, data=Transact)
+summary(firstfit)
+```
+We see the summary of the model, but before looking into that, let's go ahead and fit several other models and see what insights they give us. 
+
+```{r}
+secondfit <- lm(time~a+d, data=Transact)
+summary(secondfit)
+```
+Next I will use t2 and the d.
+
+```{r}
+thirdfit <- lm(time~t2+d, data=Transact)
+summary(thirdfit)
+```
+lastly, we will try to fit all of the variables. 
+
+```{r}
+fourthfit <- lm(time~., data=Transact)
+summary(fourthfit)
+```
+We can also compare the coefficients in one table.
+
+```{r}
+compareCoefs(firstfit, secondfit, thirdfit, fourthfit)
+```
+As you can see, there are several variables that have their parameters missing or "aliased" in the fourth model. This is due to some of the variables already being accounted for, especially the ones in which we created that are used in the fourth model. The differences and averages are already captured in the t1 and t2 variables which makes the a and d variables redundant. 
+
+For the last demonstration, we are going to use the UN11 data again. This time we will turn the response, fertility, into a log-transformed variable. We are going to use log of ppgdp as well to determine if it describes the relationship well.
+
+```{r}
+logUN11fit <- lm(log(fertility)~log(ppgdp), data=UN11)
+plot(log(UN11$ppgdp), log(UN11$fertility), xlab="logppgdp", ylab="logfertility", main="Log plot")
+abline(logUN11fit, col="red")
+```
+
+Here we see a negative relationship between the log of fertility and the log of ppgdp. Let's look at the summary of the fit we just made.
+
+```{r}
+summary(logUN11fit)
+```
+Just as before, the summary confirms the negative relationship between the sole predictor and the response. for every 1% increase of logppgdp, a .21% reduction in the log of ppgdp is observed. We also see a significant p-value for the log of ppgdp.
