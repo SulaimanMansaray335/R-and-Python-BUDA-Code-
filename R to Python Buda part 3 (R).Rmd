@@ -1,0 +1,299 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+For this assignment, we are going to look at the jevons dataset to analyze the relationship between the weight of coins to their age which will serve as the sole predictor variable, as always we will start off with exploratory data analysis.  
+
+```{r}
+library(alr4)
+data(jevons)
+head (jevons)
+summary(jevons)
+```
+
+```{r}
+plot(jevons$Age, jevons$Weight)
+
+```
+Looking at the data, it seems as if we are working with summary statistcs. This tells us that we may have to use weights in order to tackle the variance situation if we are dealing with mulitple observations for each age. We will first fit our model using only standard OLS, then we will check the model using WLS to see if it fits it better. 
+```{r}
+mod <- lm(Weight~Age, data=jevons)
+summary(mod)
+ncvTest(mod)
+plot(jevons$Age, jevons$Weight)
+abline(mod)
+```
+We see the line going through the data, however, with this being summary statistics, we know that we are dealing with different variances at each data point of age. Although the NCV Test tells us there is homoscedasticity, we can still try to plot out the residuals against the fitted values as well.
+
+
+```{r}
+
+plot(mod$fitted, mod$residuals)
+
+```
+```{r}
+
+plot(jevons$Age, jevons$SD)
+
+```
+It is very difficult to tell from the first plot, however the second plot shows that as age increases, the variances also increases. For the purpose of predictions, we will add weights using Weighted Least Squares because that will allow us to predict better on datapoints where there is little to no variation. Dealing with summary statistics, we want to use the inverse of the variance which for this case is variance/n, so the inverse will be n/variance.
+
+```{r}
+modw <- lm(Weight~Age, data=jevons, weights = n/(SD^2))
+plot(jevons$Age, jevons$Weight)
+abline(modw, col="black")
+abline(mod, col="red")
+
+```
+Looking at the lines from our two models, the black line is from the WLS model and the red is OLS. As stated before, weights allow for better predictions in datapoints with very little variation, so for this we can see that our predictions will be best at ages 1-2, but once we reach age 3 and above, we experience more variation.
+```{r}
+summary(mod)
+```
+
+```{r}
+summary(modw)
+```
+Looking at the summary for both fits, they do not differ much. With all things considered, they tell us without any predictors, our coins are at 7.9985 and 7.9965 for the OLS and WLS models respectively. Both those figures are above the standard weight for new coins of 7.9876 grams and the minimum legal weight at 7.9379 grams. As the year increases one unit, both coins lose weight. The OLS shows there is a decrease of -0.025 in grams for every increase in year. The WLS says something similar, as the year increases, there is a reduction in weight by -0.02376. This shows we can predict the weight after year one and two but then afterwards it begins to become more difficult.  
+
+
+Our next problem, we will look at the relationship between the speed of a single car and the distance it stops at. As always, we will start with EDA before creating any fits. We are only working with two variables so Speed will serve as our response. 
+
+
+```{r}
+
+data(stopping)
+head(stopping)
+
+```
+
+```{r}
+plot(stopping$Speed, stopping$Distance)
+```
+We see evidence of a non-constant variance so we will address that, but first, we will fit the line. 
+
+```{r}
+stop <- lm(Distance~Speed, data = stopping)
+plot(stopping$Speed, stopping$Distance)
+abline(stop)
+```
+Our fitted line seems to fit the data pretty well, but we also suspect non-constant variance so let us look at a plot of the residuals against the fitted values. 
+
+```{r}
+plot(stop$fitted, stop$residuals)
+```
+```{r}
+ncvTest(stop)
+```
+With the plot looking like a slight megaphone and our test show that we do indeed have a non-constant variance. Now, we must decide how to handle this non-constant variance. Since we are only working with a single, it would be a bit difficult to figure out the variance at each point. We will try three different weights that will allow us the keep the weights positive. 
+
+
+```{r}
+stop2 <- lm(Distance~Speed, data=stopping, weights = 1/abs(Speed))
+stop3 <- lm(Distance~Speed, data=stopping, weights = 1/(Speed^2))
+stop4 <- lm(Distance~Speed, data=stopping, weights = exp(Speed))
+
+plot(stopping$Speed, stopping$Distance, xlab="Speed", ylab = "Distance")
+abline(stop2, col="blue")
+abline(stop3, col="black")
+abline(stop4, col="red")
+```
+We used three different models with different weights. The blue line corresponds to our weight using the inverse absolute value of speed. The black line uses the inverse of the square of speed. The red line is just the exponent of speed. Clearly, the red line does not fit the data at all. Therefore, we can weed that out and only focus on the inverses of the square of speed and the absolute value of speed. 
+```{r}
+plot(stop2$fitted, stop2$residuals)
+```
+
+```{r}
+ncvTest(stop2)
+```
+The inverse of the absolute value fixes the heteroscedasticity a bit, however we still see some non-constant variance. We fail to reject the null at almost every standard level. 
+```{r}
+plot(stop3$fitted, stop3$residuals)
+```
+```{r}
+ncvTest(stop3)
+```
+The plot and the NCV Test for the inverse of the square of speed is much better as we accept the null at almost every level. Although the plot does still show a bit of a megaphone shape. For this problem, it seems as if the inverse of the square of speed is the best, so we will go with that and evaluate. 
+```{r}
+summary(stop3)
+
+```
+Looking at the summary, we can see that the intercept tells as that if there was no speed, our car will stop at a distance of -9.0458 which does not make sense as we will be deceleration. For each unit increase of speed, we can expect the distance that we stop at to decrease by 2.4537. We also see that Speed is a significant variable. 
+
+
+For our next problem we will be looking at the MinnLand data which shows the relationship of acre prices per acre for farms in Minnesota. The acre price will be our response, or acrePrice. For predictors we will use the percentage of property value due to improvements, acre size of the farm, percentage of farm acreage that is rated arable by an assessor, productivity of each farm, the year of sale of the farm, and the percentage of all farm acres enrolled in the Federal Conservation Reserve Program. 
+```{r}
+data(MinnLand)
+head(MinnLand)
+summary(MinnLand)
+
+```
+
+```{r}
+
+acrefit <- lm(acrePrice~improvements+year+acres+tillable+crpPct+productivity, data=MinnLand)
+summary(acrefit)
+
+```
+Running the model as is tells us several things. First and foremost, all the variables seem to be significant. With all things equal to 0, we can expect acre prices to be around -6.809e+05 which does not make too much sense so we see it as a tuning parameter. For every unit increase of improvements, the acre price increases by 54.37. For every increase in year, the acre price increases by 339.3. For every increase in acres we expect a decrease of 1.979 in acre prices. An increase in tillable increases acre prices by 6.687. An increase in all the farms enrolled in the National Conservation Reserve program decreases acre prices by 9.822 and finally an increase by one unit in productivity increases acre prices by 40.64. We fit our model without checking for any of our assumptions; linearity, homoscedasticity, no multicollinearity, normality, independence of errors, and no major outliers.
+```{r}
+residualPlots(acrefit)
+par(mfrow=c(2,2))
+plot(acrefit)
+
+```
+```{r}
+ncvTest(acrefit)
+outlierTest(acrefit)
+```
+Looking at our diagnostic tests, it looks as if we have several violations in homoscedasticity, linearity, and normality. The qq-residual plot, we can see the tails veering a bit off. The variance also fails the ncv Test as we reject the null hypothesis that all variance is the same. We also have a low p-value for the tukey test. One thing we can say though is that there does not seem to be any major outliers. Since our assumption of normality is violated along with the absence of a constant variance, we can look about doing transformations to kill several birds with one stone. We will transform the response first. We will use both the boxcox function as well as the invResPlot to see the lambda choices visually
+```{r}
+boxCox(acrefit)
+invResPlot(acrefit)
+```
+
+Based on both methods a power of .32 provides the lowest residual sum of squares. The second best choice is a power transformation of 0, which we know will turn any number to 1. For data scientists, we use 0 as log. First, we will look into doing the recommended transformation for the response. 
+
+```{r}
+acrefit2 <- lm(acrePrice^(.32)~improvements+year+acres+tillable+crpPct+productivity, data=MinnLand)
+summary(acrefit2)
+par(mfrow=c(2,2))
+plot(acrefit2)
+
+```
+```{r}
+ncvTest(acrefit2)
+outlierTest(acrefit2)
+residualPlots(acrefit2)
+```
+With the recommended transformation, our coefficient estimates change drastically, but still move in the same directions with unit increases of each variable. We still see non-constant variance and we still a violation of normality as well as linearity. Not only that, we loose interpretability with an exponent like that. In fact this makes everything even harder. Let's try the other recommended power transformation as a log transformation can be interpreted. 
+```{r}
+acrefit3 <- lm(log(acrePrice)~improvements+year+acres+tillable+crpPct+productivity, data=MinnLand)
+summary(acrefit3)
+par(mfrow=c(2,2))
+plot(acrefit3)
+```
+```{r}
+ncvTest(acrefit3)
+outlierTest(acrefit3)
+residualPlots(acrefit3)
+```
+We are still seeing some violations, especially with the non-constant variance. Our overall model shows linearity, however there are several predictors that do not. Usually, the global passing the linearity check is fine, but for better inferences we also want to address the predictors. Normality is still violated as well. Now, to try to address those, we can see about doing a transformation for the rest of the predictors.
+
+```{r}
+summary(powerTransform(cbind(acrePrice, improvements, year, acres, tillable, crpPct, productivity)~1, MinnLand, family="bcnPower"))
+
+```
+Now we are seeing some transformation recommendations and some may lead to some interpretability issues. Normally, I would just use the log of acre prices and the log of acres as well since that was its actual recommendation, however, we will actually go with the recommended lambdas. Also, for certain transformations such as negative exponents and 0-exponent, we have to make sure we do not see any 0's for that particular variable or it will cause us problems when using logs or negative powers.
+
+
+```{r} 
+
+MinnLand$improvements2 <- MinnLand$improvements + 1
+MinnLand$crpPct2 <- MinnLand$crpPct + 1 
+
+acrefit4 <- lm(acrePrice^(.302)~I(improvements2^(-1.523))+I(year^(-2.297))+log(acres)+I(tillable^3)+I(crpPct2^(-2.064))+I(productivity^(1.864)), data = MinnLand)
+summary(acrefit4)
+par(mfrow=c(2,2))
+plot(acrefit4)
+```
+```{r}
+ncvTest(acrefit4)
+outlierTest(acrefit4)
+residualPlots(acrefit4)
+```
+Using the recommended transformations, it looks like our model fits much better, however there are still major violations. We still have heteroscedasticity, and now our overall model is less linear though some of the predictors are more linear than before. The biggest issue is the fact that we can barely interpret and explain this to any stakeholder. This would not be a good model for inference. 
+
+Finally, I am going to use the transformation that I felt was more appropriate for the sake of being able to interpret the relationship. I will use a log transformation for both acre price and acres. 
+
+```{r}
+acrefit5 <- lm(log(acrePrice)~improvements+year+log(acres)+tillable+crpPct+productivity, data=MinnLand)
+summary(acrefit5)
+```
+```{r}
+
+par(mfrow=c(2,2))
+plot(acrefit5)
+ncvTest(acrefit5)
+outlierTest(acrefit5)
+residualPlots(acrefit5)
+```
+Our assumptions still are not met which indicates that this model will be bad for interpretation. We an see about adding other higher ordered terms like interactions. We will still try to interpret the results however.
+With all predictors at 0, our acre prices would be at -236.4. Again, this is seen as a tuning parameter. For every one unit increase of improvements, we see an increase of 1.538 dollars to acre price. Every unit increase of year will see an increase of 12.12 dollars. Every one percent increase of log acres sees a -.11098% decrease in the log price of acre prices. Every unit increase of tillable sees an increase of .462 dollars in acre price. Every unit increase of crpPct sees a decrease of .4658 of the price of acres. Lastly every unit increase of productivity sees an increase of 1.588 in the price of acres. 
+
+
+For the last problem we will look at a data set pertaining to the 2000 election. Each observation consists of a county in Florida and the amount of votes they gave for each Presidential candidate, so all of this data is for Florida. There are three variables, "Bush", "Buchanan", "Gore"; we will use Bush as the response and just Buchanan as the predictor to look at the relationship of those who voted for Bush to those who voted for Buchanan. We will start with exploratory data analysis.
+```{r}
+
+data(florida)
+head(florida)
+summary(florida)
+plot(florida$Buchanan, florida$Bush)
+```
+Looking at the data and the chart, it may be suitable for us to do some sort of transformation on the response and predictor because the range goes over several orders of 10. Before doing that, we will go ahead and fit the model. 
+
+```{r}
+vote <- lm(Bush~Buchanan, data=florida)
+summary(vote)
+```
+Looking at the data, it tells us that with the predictor being 0, Bush would have received 2,2911 votes. Of course we always use the intercept as a tuning parameter. For every increase in vote for Buchanan, there is a 79.1 increase in votes for Bush. 
+
+```{r}
+ncvTest(vote)
+outlierTest(vote)
+residualPlots(vote)
+par(mfrow=c(2,2))
+plot(vote)
+```
+Looking at the diagnostic tests, we fail several assumptions. We have heteroscedasticity and we do not have linearity. Normality is slightly off. We also see a leverage point for Palm Beach on the x space, this one is above the value of 1 in cook's distance. Dade is also an outlier as it too has a very low Bonferroni p-value is very small. We will see what transforming only the predictor does and see if that fixes any linearity or variance issues. 
+
+```{r}
+invTranPlot(Bush~Buchanan, data=florida)
+```
+
+The best exponent that was recommended to us was for .304. We know that is not very easy to explain, so we will go with the next best one which is a log transformation on the variable Buchanan. 
+
+```{r}
+vote2 <- lm(Bush~log(Buchanan), data=florida)
+summary(vote2)
+```
+```{r}
+ncvTest(vote2)
+outlierTest(vote2)
+residualPlots(vote2)
+par(mfrow=c(2,2))
+plot(vote2)
+```
+The transformation allowed us to eliminate Palm Beach as an outlier, but that was about the only thing that was fixed. Perhaps the normality assumption was fixed a bit, but we still have a non-constant variance, we don't have linearity and Dad remains an outlier, though maybe not too influential as it lies between 1 and 0.5 of cook's distance. Let us see about transforming all variables to address normality, variance and possibly the linearity assumption.
+
+```{r}
+summary(powerTransform(cbind(Bush, Buchanan)~1, florida))
+```
+The power transformation suggests that we do a log transformation for both the predictor and the response. This excellent because a long transformation is very easy to interpret. 
+
+```{r}
+vote3 <- lm(log(Bush)~log(Buchanan), data = florida)
+summary(vote3)
+```
+
+```{r}
+ncvTest(vote3)
+outlierTest(vote3)
+residualPlots(vote3)
+par(mfrow=c(2,2))
+plot(vote3)
+
+```
+These transformations were good as now we have linearity and we have homoscedasticity. Normality does not seem to be too violated. Palm Beach is an outlier again, with Dade being taken care of. Let's see how influential the Palm Beach observation truly is. 
+
+```{r}
+which(rownames(florida) == "PALM BEACH")
+
+```
+
+```{r}
+voteless <- lm(log(Bush)~log(Buchanan), data=florida[-50,])
+summary(voteless)
+summary(vote3)
+```
+We see very little difference in the removal of the Palm Beach observation. That confirms it is not very influential. Looking at the full model with both log transformations says that for every 1% increase in log of Buchanan coincides with 1.18% increase in votes for Bush. 

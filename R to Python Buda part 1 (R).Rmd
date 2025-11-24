@@ -1,0 +1,193 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+For this assignment we will emphasize the bootstrapping concept, of taking a sample and repeatedly sampling with and without replacement. We are going to analyze the mean of applications received to 777 colleges and universities. This data was received by the 1995 US and World report.
+
+I will first download the necessary dependencies in order to begin this assessment.
+
+```{r}
+library(ISLR)
+dim(College)
+head(College)
+```
+Now after our initial data exploration, we can now dive in a bit. In order to demonstrate the capabilities of bootstrapping, I will calculate the mean of all the apps recieved per college and store it in a variable "original_mean". Then in order to do the bootstrap, I will create an empty list called "boots". Then we will sample the mean 1000 different times and each time, the new mean will be added to the list until we have 1000 means on that list. When we do the resampling, we will resample WITH replacement to emphasize real world phenomenas in data sampling.
+
+```{r}
+original_mean <- mean(College$Apps)
+original_mean
+```
+```{r}
+set.seed(1)
+Mine <- Sys.time()
+boots <- NULL
+
+for(i in 1:1000){
+  sample <- mean(sample(College$Apps, 777, replace=TRUE))
+  boots <- c(boots, sample)
+}
+
+Mine2 <- Sys.time()
+
+Mine2 - Mine
+```
+We see that it took about .11 seconds for the boot sampling to run. We now have 1000 means of 777 colleges each. This data has its own distribution which we will plot and also utilize to make inferences, so what we will do, we will apply a confidence interval of about 80% on the mean to come up with a range from our bootstrap distribution. We will use the quantile method as well as the standard deviation method.
+
+```{r}
+ci_80 <- quantile(boots, c(.10, .90))
+
+
+
+ci_80_2 <- original_mean + 2*c(-sd(boots), sd(boots))
+
+cat("quantile version", ci_80, "\n")
+cat("standard deviation version", ci_80_2)
+```
+
+With 80% of confidence, I can safely say that the mean falls between 2,822 and 3,178 apps if we are using the quantile version. If we are using the standard deviation method, then our interval is between 2,726 and 3,277. Similar ranges all across the board.
+
+Now for the second part, we are going to use different seeds to see if there is a huge deviation in the calculations.
+
+```{r}
+set.seed(2)
+
+boots2 <- NULL
+
+for(i in 1:1000){
+  sample <- mean(sample(College$Apps, 777, replace=TRUE))
+  boots2 <- c(boots2, sample)
+}
+
+ci_80 <- quantile(boots2, c(.10, .90))
+
+ci_80_2 <- original_mean + 2*c(-sd(boots2), sd(boots2))
+
+cat("quantile version", ci_80, "\n")
+cat("standard deviation version", ci_80_2)
+```
+```{r}
+set.seed(3) 
+
+boots3 <- NULL
+
+for(i in 1:1000){
+  sample <- mean(sample(College$Apps, 777, replace = TRUE))
+  boots3 <- c(boots3, sample)
+}
+
+ci_80 <- quantile(boots3, c(.10, .90))
+
+ci_80_2 <- original_mean + 2*c(-sd(boots3), sd(boots3))
+
+cat("quantile version", ci_80, "\n")
+cat("standard deviation version", ci_80_2)
+```
+As we see, even with the different seeds, our estimates do not deviate much which makes us feel good as we can tell our stakeholders that the general mean is anywhere between 2700 to 3200 apps. Changing the seed does not seem to drastically change our calculations. Also, most importantly, they don't seem to deviate from the initial "original mean" stored in orignal_mean.
+
+There is one last thing we can look at. We can now check if, maybe, changing the amount of bootstrap samples from 1000 to 5000 will change anything. We will even go as far as reusing seed numbers.
+
+```{r}
+
+set.seed(1)
+
+boots2 <- NULL
+
+for(i in 1:5000){
+  sample <- mean(sample(College$Apps, length(College$Apps), replace=TRUE))
+  boots <- c(boots, sample)
+}
+
+ci_80 <- quantile(boots, c(.10, .90))
+
+ci_80_2 <- original_mean + 2*c(-sd(boots), sd(boots))
+
+cat("quantile version", ci_80, "\n")
+cat("standard deviation version", ci_80_2)
+```
+```{r}
+set.seed(2)
+
+boots2 <- NULL
+
+for(i in 1:5000){
+  sample <- mean(sample(College$Apps, length(College$Apps), replace=TRUE))
+  boots2 <- c(boots2, sample)
+}
+
+ci_80 <- quantile(boots2, c(.10, .90))
+
+ci_80_2 <- original_mean + 2*c(-sd(boots2), sd(boots2))
+
+cat("quantile version", ci_80, "\n")
+cat("standard deviation version", ci_80_2)
+```
+```{r}
+
+set.seed(3)
+
+boots3 <- NULL
+
+for(i in 1:5000){
+  sample <- mean(sample(College$Apps, length(College$Apps), replace=TRUE))
+  boots3 <- c(boots3, sample)
+}
+
+ci_80 <- quantile(boots3, c(.10, .90))
+
+ci_80_2 <- original_mean + 2*c(-sd(boots3), sd(boots3))
+
+cat("quantile version", ci_80, "\n")
+cat("standard deviation version", ci_80_2)
+```
+Again, nothing seems to deviate much regardless of the bootstrapping sample or the seed that was set. This shows that our calculation is very robust, in other words, it is very consistent.
+
+
+For our last analysis, we are going to analyze the average amount of applications between private and public institutions. For this we will create null and alternative hypothesis to test out. Our null hypothesis that private schools receive just as many applications from public schools, if not, more. The alternate hypothesis is that public schools receive, on average, more applications that private schools. We will once again use a re sampling distribution, but this time WITH replacement to accentuate the randomness of the schools receiving apps for our null distribution. I will plot out the distribution in a histogram and plot the line of the original difference in means on the histogram to see if a metric similar to that or more extreme could come from our null distribution. Visually, this will tell us whether we can reject or not reject the null hypothesis.
+
+```{r}
+CollegeApps_Mean <- tapply(College$Apps, College$Private, mean)
+CollegeApps_Mean
+```
+```{r}
+CollegeDifferenceOriginal <- CollegeApps_Mean[2] - CollegeApps_Mean[1]
+CollegeDifferenceOriginal
+```
+```{r}
+NewPrivate <- sample(College$Private, length(College$Private), replace=FALSE)
+
+NewCollege <- data.frame(Apps=College$Apps, Private=NewPrivate)
+
+set.seed(400)
+
+SampleNoise <- NULL 
+
+mine3 <- Sys.time()
+
+for(i in 1:10000){
+  NewPrivate <- sample(College$Private, length(College$Private), replace=FALSE)
+  NewCollege <- data.frame(Apps=College$Apps, Private = NewPrivate)
+  CollegeApps_Mean <- tapply(NewCollege$Apps, NewCollege$Private, mean)
+  CollegeDifference <- CollegeApps_Mean[2] - CollegeApps_Mean[1]
+  SampleNoise <- c(SampleNoise, CollegeDifference)
+}
+
+mine4 <- Sys.time()
+
+mine4 - mine3
+
+```
+Now it is time to plot my distribution and set the probability or the "p-value". We will set it at 5%. Notice that this took me about 10.6 seconds to run. 
+
+```{r}
+hist(SampleNoise, xlim=c(-4000, 4000))
+abline(v = CollegeDifferenceOriginal, col="red", lwd = 2)
+```
+Looking at our chart, the p-value is not even in the distribution, it is way to the left indicating a negative value. Since we are subtracting the mean apps of public schools from the mean app of private school from the original data, this resulted in a large negative value. Even if we had done the other way, subtracting the mean value of private from the mean value of public, it would still be outside our distribution. Visually, this tells us to reject the null hypothesis. Before that, we will do one last calculation to see it in pure numbers.  
+
+```{r}
+Lessthanoriginal <- SampleNoise < CollegeDifferenceOriginal 
+sum(Lessthanoriginal)/10000
+```
+
+This once again shows that the p-value is much less than the 5% threshold that we had set. We can now firmly reject the null hypothesis.
