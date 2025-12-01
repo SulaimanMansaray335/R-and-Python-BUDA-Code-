@@ -1,0 +1,259 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+For this analysis, we once again, will look at the Minnesota Data to look at the prices of acres per acre. This time there will be other variables that we will introduce that we did not use last time. Around 2007 there was a national drop in the price of land and we want to see if Minnesota was affected as well. Last time we used year as a continuous variable, this time we will utilize the variable as a factor. 
+
+```{r}
+library(alr4)
+library(lmtest)
+#attach(MinnLand)
+
+head(MinnLand) 
+summary(MinnLand)
+```
+Once again, we see the range of acrePrice and it seems to go over many orders which more than likely calls for a log transformation, which we will go ahead and do. The only predictor we are worried about at this moment is year. 
+
+```{r}
+MinnLand$yearF <- as.factor(MinnLand$year) 
+MinnLand$acrePrice_log <- log(acrePrice)
+
+minnfit <- lm(acrePrice_log~yearF, data=MinnLand)
+summary(minnfit)
+```
+```{r}
+boxplot(acrePrice_log~yearF,data=MinnLand,  xlab="Year", ylab="Acre Price", label="Acre Price vs Year")
+```
+Looking at both the summary and the boxplot, it seems as if the prices of acres seem to rise yearly, even in 2007. The summary table uses the year 2002 and every year, other than 2003, sees a rise even in 2007 with an increase of .477 dollars from 2003. All of these levels show significance from the baseline. We will use an anova later to further confirm it. We will do some more diagnostics. 
+
+```{r}
+par(mfrow=c(2,2))
+plot(minnfit)
+```
+```{r}
+ncvTest(minnfit)
+bptest(minnfit)
+```
+ Both the charts and the ncv test show evidence of a non constant variance. Although we are using categorical data, we can see about using weights and how that may fix the variance issues. 
+```{r}
+var = tapply(MinnLand$acrePrice_log, MinnLand$yearF, var)
+Wts = rep(0, length(MinnLand$acrePrice_log))
+for(i in 1:length(MinnLand$acrePrice_log)){
+  Wts[i] <- 1/var[MinnLand$yearF[i]]
+}
+```
+ 
+```{r}
+minnfitwts <- lm(acrePrice_log~yearF, weights = Wts, data=MinnLand)
+summary(minnfitwts)
+```
+```{r}
+ncvTest(minnfitwts)
+bptest(minnfitwts, studentize = FALSE)
+```
+```{r}
+par(mfrow=c(2,2))
+plot(minnfitwts)
+```
+```{r}
+residualPlots(minnfitwts)
+resettest(minnfitwts, power=2:3)
+```
+
+```{r}
+outlierTest(minnfitwts)
+```
+Looking at the diagnostics, it doesn't seem as if we have a good fit as our model fails the bruesch-pragan test. So, homoscedasticity is non existant, even with weights.
+
+Now, we will introduce a new variable to the model. One that we have not used yet, "region". This too will be treated like a factor with its own baseline.
+
+```{r}
+minnfact <- lm(acrePrice_log~yearF+region, data=MinnLand)
+summary(minnfact)
+```
+```{r}
+par(mfrow=c(2,2))
+plot(minnfact)
+```
+```{r}
+ncvTest(minnfact)
+bptest(minnfact)
+```
+```{r}
+residualPlots(minnfact)
+resettest(minnfact, power=2:3)
+```
+Looking at the data summary above as well as the diagnostics, we fail many assumptions in order to consider this a good model. Never the less, we can go ahead and try to interpret the summary table that we produced. The intercept represents the baseline category, which in our case is two categories. The year 2002 and the Central region. We see an increase in acre price each year in the central region. We also see rises in prices when we leave the central region for the south central and south east regions, however, we see drops in prices once we enter the north west, south west, and west central regions. What we are missing are interaction effects between year and region. We will model that next.
+```{r}
+minnint <- lm(acrePrice_log~yearF+region+yearF*region, data=MinnLand)
+summary(minnint)
+```
+```{r}
+par(mfrow=c(2,2))
+plot(minnint)
+```
+```{r}
+ncvTest(minnint)
+bptest(minnint)
+```
+```{r}
+residualPlots(minnint)
+resettest(minnint, power = 2:3)
+```
+Running this new model allows us to see specific effects of region and year by creating an interaction of these two features. For instance, if I want to see insight of acre prices in the north west region in the year 2004, I can simply take the intercept, which is 7.404 add the coefficient for 2004 which is .2873, subtract the coefficient for the north west region, which is 1.2048, before finally add the coefficient for the interaction of 2004 and north west which should be .0611 which should bring us to 6.55 dollars per acre for that region during that time. However,this model is not a good one as it still violates several assumptions. We also see that many of the p-values for for our interaction scenarios are not significant. We can compare both models, the pure factor model, and the model with the interaction to see which is a better fit. We will use an anova to do so.
+
+```{r}
+anova(minnfact, minnint)
+```
+
+Our anova test confirms to us that the model with the interaction term is better than the model with just year and region. Although looking at the decrease in the residual sum of squares barely decreased. Regardless, we will go with the more complex model! We can also look at effect plots of each variable as well!
+```{r}
+plot(allEffects(minnint))
+```
+Region shows movement from year to year amongst all regions. This is vital for descriptive purpose, but our main goal for now is to make sure our model meets assumptions before we can make any valid inferences. 
+
+For our next problem I am going to investigate possible pay discrimination in a small Midwestern college using variables such as rank, degree, years since degree, years in current rank, and finally salary as the predictor variable. First I will run a t-test to test the null that men receive just as much in salary, if not less than women. The alternative will be that men receive more.
+```{r}
+head(salary)
+summary(salary)
+```
+```{r}
+means <- tapply(salary$salary, salary$sex, mean)
+
+original_differences <- means[1]-means[2]
+
+#original_differences
+means[1] - means[2]
+```
+```{r}
+t.test(x=salary$salary[salary$sex == "Male"], y=salary$salary[salary$sex == "Female"], alternative = "greater")
+```
+```{r}
+boots <- NULL 
+
+for(i in 1:10000){
+  new_salary <- sample(salary$salary, dim(salary)[1], replace=FALSE)
+  salary_df <- data.frame(salary=new_salary, sex=salary$sex)
+  means <- tapply(salary_df$salary, salary_df$sex, mean)
+  differences <- means[1]-means[2]
+  boots <- c(boots, differences)
+}
+
+
+hist(boots, xlab="Mean Distribution", ylab="Frequency", main="Mean Distribution")
+abline(v=original_differences, col="red")
+
+
+```
+```{r}
+pvalue <- original_differences < boots  
+sum(pvalue)/10000
+
+```
+In this scenario, we utilized both the Welch's t-test as well as a bootstrap sample t-test and both of them show similar scores. Our null hypothesis was that females make just as much as males do, if not more. The alternative was that males make more. With our .045 and .034, we can safely reject the null hypothesis at a significant level of 0.05. It seems as if we have enough data to suggest that it is in fact true. However, we need to further do some analysis to figure out the important drivers of salary. Several of the variables that we will be looking at are sex, degree, rank which are all factor or categorical variables, so they will be handled differently. Our continuous variables will be year and ysdeg (years since degree). As you can guess, we may not be able to do to many power transformations to correct any linearity since we are dealing with a lot of categorical data.
+```{r}
+salfit <- lm(salary~sex+degree+rank+year+ysdeg,data=salary)
+summary(salfit)
+```
+Looking at the results, we can see the intercept as the baseline. It looks as if it represents being a female with a rank of an associate with a Master's degree. We also see some of the p-values coming back interesting. The male subgroup has a high p-value indicating that there is no difference in the male subgroup and the female subgroup. But that contradicts the information that we received from the two t-tests from earlier where we failed to reject the null hypothesis that there wasn't a difference in groups. Here, because the model is taking other data into account, the pvalue is a bit different. We also see that having a PhD doesn't seem to matter with it's high p-value. Assistant, Professor sub groups of Rank as well as years since degree (ysdeg) seem to show significance. The model reads, when you go from female to male, you will make 1,166.37 dollars less, which further contradicts our two earlier tests. If you go from Masters to PhD you are expected to receive 1,388.61 more. If you go from Associate to Assistant professor, you will see a decline of 5,592.36 dollars and if you go from associate to Professor, you will see an increase of 5,826.30 dollars. Each unit increase of year sees an increase of 476.31 dollars where else each year since degrees sees a decrease of 124.57 dollars.
+```{r}
+par(mfrow=c(2,2))
+plot(salfit)
+```
+```{r}
+residualPlots(salfit)
+resettest(salfit, power = 2:3, type="regressor")
+```
+
+```{r}
+ncvTest(salfit)
+bptest(salfit)
+```
+```{r}
+vif(salfit)
+```
+Something new that we are introducing in our diagnostics is the variable inflation factor to detect any multicollinearity. The only one that we see that may cause issues is ysdeg(years since degree) which is already an insignificant variable.
+```{r}
+outlierTest(salfit)
+```
+
+Finally, we are going to do the same model, but this time without rank. Although rank was considered significant within levels, we just want to do this in order to use the ANOVA to compare our two models. 
+```{r}
+salfit2 <- lm(salary~degree+sex+year+ysdeg, data=salary)
+summary(salfit2)
+```
+
+```{r}
+par(mfrow=c(2,2))
+plot(salfit2)
+```
+```{r}
+residualPlots(salfit2)
+resettest(salfit2, power = 2:3, type = "regressor")
+```
+```{r}
+ncvTest(salfit2)
+bptest(salfit2)
+```
+
+```{r}
+vif(salfit2)
+```
+```{r}
+outlierTest(salfit2)
+```
+
+```{r}
+anova(salfit)
+```
+```{r}
+anova(salfit2, salfit)
+```
+
+Our next problem we are going to look at the strength of wool in a manufacturing setting based on the length of the yarn, the amount the yarn was asked to hold and the time the yarn was asked to hold per cycle. We will be looking a the wool data set from the alr4 package.
+```{r}
+head(Wool)
+summary(Wool)
+```
+```{r}
+unique(Wool$load)
+```
+Looking at this data, we are dealing with mostly continous data. For our purpose, we want to turn the load variable into a factor with three levels. We will use all the other variables as predictors with cycles as the response. 
+
+```{r}
+woolfit <- lm(cycles~len+amp+as.factor(load), data=Wool)
+summary(woolfit)
+```
+```{r}
+par(mfrow=c(2,2))
+plot(woolfit)
+```
+```{r}
+residualPlots(woolfit)
+resettest(woolfit, power = 2:3, type = "regressor")
+```
+```{r}
+bptest(woolfit)
+```
+```{r}
+vif(woolfit)
+```
+```{r}
+outlierTest(woolfit)
+```
+
+The summary statistics of our model gives us insight. Since load is our factor, the intercept corresponds to a load level of 40. When we go from a load of 40 to a load of 45, we see a decrease of about 256 cycles. When we go from 40 to 50 we see a loss of about 622 cycles. We see with a unit increase of length, our cycles increase by 13.2 and a unit increase in amp corresponds to a decrease of about 536 cycles. One thing that jumps out, however is that the difference between a load of 40 and 45 does not seem significant according to the p-value when we test it at a value of .05. We will use an anova test to truly see if there is a difference between the load groups. We will use the Tukey Honest Significance Difference test. 
+```{r}
+tukey <- TukeyHSD(aov(cycles~as.factor(load), data = Wool))
+tukey 
+plot(tukey)
+```
+Looking at the the test, it tells us that the difference of the mean in cycles between 40 and 50 is 262.56, but can be anywhere from -1295.45 and 770.34. For 40 and 50 the mean difference is 621.67, but the range is anywhere from -1654.56 and 441.23. For 40 and 50 the difference is 359.11, but can be anywhere from -1392 and 673.78. The main thing that jumps out, however, is that the difference between all these levels are insignificant meaning there is no difference in the load levels. Our original summary told us that for 40 and 45, but not necessarily 40 and 50. 
+```{r}
+avPlots(woolfit)
+```
+```{r}
+anova(woolfit)
+```
+Our anova tells us that load is still a significant variable even at the 5% level. It would be safe to keep it, but we do have to understand that the levels within do not matter, however. Because it barely passes the p-value threshold, I would normally just drop it.
