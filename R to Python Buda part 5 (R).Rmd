@@ -1,0 +1,193 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+For these analysis, we will be taking a further look into model selection. We have seen the anova method and how that plays into choosing between models. The anova method comes with limitations however, first and for most the two models that are being compared are usually a main model and a submodel. The main model has everything that the sub model has plus more. The sub model only holds several of the predictors that the main model has. As you can see, this limits us when it comes to comparing models because what if we wanted to compare two completely different models with a different set of predictors? Well, we have several methods. For prediction purposes, we will do the k-fold cross validation method to see which of our two models predict the best. We compare the residual sum of square or the mean square error to figure out which of our models predicted the best.
+
+```{r}
+library(alr4)
+library(lmtest)
+library(foreach)
+library(doParallel)
+
+head(MinnLand)
+```
+This is a dataset that we are used to. We are going to turn the year variable into a factor and turn acrePrice into a log transformation because it will serve as our response variable. We will be using all the other variables in the dataset as predictor variables.
+```{r}
+MinnLand$yearF <- as.factor(MinnLand$year)
+summary(MinnLand)
+```
+```{r}
+minnlandlog <- lm(log(acrePrice)~region+improvements+yearF+acres+tillable+financing+crpPct+productivity, data = MinnLand)
+
+summary(minnlandlog)
+```
+As we can see, year, financing, and region are all factor variables. Our baseline looks to be the "Central" region in the "year 2002" with "seller financed" as our category. All the variables look to be signficant with the exception of the South East region, indicating there is not much difference between the Central region and the South East region. We see moving into any other region sees an increase in the acre price per acre with the exception of the south east region. We also see the price of acres goes up when we go from 2002 to any other year. We also see that when the title is transferred, the price per acre seems to rise as well. We can interpret the rest, but let's diagnose everything to see if it is truly a good model. 
+```{r}
+par(mfrow=c(2,2))
+plot(minnlandlog)
+```
+```{r}
+residualPlots(minnlandlog)
+resettest(minnlandlog, power = 2:3, type = "regressor")
+```
+```{r}
+ncvTest(minnlandlog)
+bptest(minnlandlog)
+```
+```{r}
+vif(minnlandlog)
+```
+```{r}
+outlierTest(minnlandlog)
+```
+We see that several of our assumptions are violated. Linearity, homoscedasticity, normality, and we even have some outliers. This tells us that, as it is, this is not a good model. However, we are looking to see which model is better between and our other one that we will build. Before we do so, we want to look at the anova table to see if all those predictor variables truly are significant. 
+```{r}
+anova(minnlandlog)
+```
+For the next model, we will be doing everything the same, the only difference is that we will apply a square root on the response rather than a log transformation.
+```{r}
+minnlandsqrt <- lm(sqrt(acrePrice)~region+improvements+yearF+acres+tillable+financing+crpPct+productivity, data = MinnLand)
+
+summary(minnlandsqrt)
+```
+All the variables are signficant once again with the exception of the South East region. One thing to note is the R2 and adjusted R2. In the first model, our adjusted R2 was .727, this one is at .686. This tells us that the log model may be better. One thing to note is that this is not how we typically do model comparison, looking at the R2, however when the response is the same and the model has the same amount of predictors then that is when we can use the R2 for model comparison. Now on to diagnosing the model.
+```{r}
+par(mfrow=c(2,2))
+plot(minnlandsqrt)
+```
+```{r}
+residualPlots(minnlandsqrt)
+resettest(minnlandsqrt, power = 2:3, type = "regressor")
+```
+```{r}
+ncvTest(minnlandsqrt)
+bptest(minnlandsqrt)
+```
+```{r}
+vif(minnlandsqrt)
+```
+```{r}
+outlierTest(minnlandsqrt)
+```
+```{r}
+anova(minnlandsqrt)
+```
+Other than the metrics posted, everything is practically the same. We violate the same assumptions and the anova is telling is the same variables that matter, all of them. Now for the next section, this is where we will be applying a 5 cross-fold validation method with prediction to show which model is better based soley on predictions. In order for it to work properly, we must eliminate all NA values in order for our method to work. Our data set will decrease by about 10,000 observations.
+```{r}
+MinnLand2 <- na.omit(MinnLand)
+
+set.seed(519)
+
+MinnLand2$sampid <- rep(5, dim(MinnLand2)[1])
+
+set <- sample(dim(MinnLand2)[1], dim(MinnLand2)[1], replace=FALSE)
+for(i in 1:5){
+  MinnLand2$sampid[set[(i-1)*1754+1:(i*1754)]] = i
+}
+
+foreach(i = 1:5, .combine = "+") %do% {
+  sets = which(MinnLand2$sampid == i)
+  logmod <- lm(log(acrePrice)~region+improvements+yearF+acres+tillable+financing+crpPct+productivity,     data=MinnLand2[-sets,])
+  preds <- predict(logmod, newdata=MinnLand2[sets,])
+  y_true <- log(MinnLand2$acrePrice[sets])
+  sum((y_true - preds)^2)
+}
+```
+Here we see that our Resisual Sum of Squares combined is about 729.07. Now we will do the same with the square root version of the model and see how the Resisual Sum of Squares performs, keep in mind we can also use the Mean Squared Error, which is just the RSS divided by the observation amount.
+```{r}
+set.seed(520)
+
+MinnLand2$sampid <- rep(5, dim(MinnLand2)[1])
+
+set <- sample(dim(MinnLand2)[1], dim(MinnLand2)[1], replace = FALSE)
+for(i in 1:5){
+  MinnLand2$sampid[set[(i-1)*1754+1:(i*1754)]] = i
+}
+
+foreach(i = 1:5, .combine = "+") %do% {
+  sets = which(MinnLand2$sampid == i)
+  sqrtmod <- lm(sqrt(acrePrice)~region+improvements+yearF+acres+tillable+financing+crpPct+productivity,
+  data=MinnLand2[-sets,])
+  preds <- predict(sqrtmod, newdata=MinnLand2[sets,])
+  y_true <- sqrt(MinnLand2$acrePrice[sets])
+  sum((y_true - preds)^2)
+}
+```
+We can clearly see the value of the RSS for the log is significantly smaller than the RSS for the square root model, letting us know that our log model predicts far better. We can do the same thing, this time with 10-fold cross validation to see if our results will be any different.
+
+```{r}
+set.seed(521) 
+
+MinnLand2$sampid <- rep(10, dim(MinnLand2)[1])
+
+set <- sample(dim(MinnLand2)[1], dim(MinnLand2)[1], replace = FALSE)
+for(i in 1:10){
+  MinnLand2$sampid[set[(i-1)*877+1:(i*877)]] = i
+}
+
+foreach(i = 1:10, .combine ="+") %do% {
+  sets = which(MinnLand2$sampid == i)
+  logmod2 <- lm(log(acrePrice)~region+improvements+yearF+acres+tillable+financing+crpPct+productivity,    data=MinnLand2[-sets,])
+  preds <- predict(logmod2, newdata=MinnLand2[sets,])
+  y_true <- log(MinnLand2$acrePrice[sets])
+  sum((y_true - preds)^2)
+  
+}
+```
+```{r}
+set.seed(522)
+
+MinnLand2$sampid <- rep(10, dim(MinnLand2)[1])
+
+set <- sample(dim(MinnLand2)[1], dim(MinnLand2)[1], replace = FALSE)
+for(i in 1:10){
+  MinnLand2$sampid[set[(i-1)*877+1:(i*877)]] = i
+}
+
+foreach(i = 1:10, .combine="+") %do% {
+  sets = which(MinnLand2$sampid == i)
+  sqrtmod2 <- lm(sqrt(acrePrice)~region+improvements+yearF+acres+tillable+financing+crpPct+productivity,   data = MinnLand2[-sets,])
+  preds <- predict(sqrtmod2, newdata = MinnLand2[sets,])
+  y_true <- sqrt(MinnLand2$acrePrice[sets])
+  sum((y_true - preds)^2)
+}
+```
+Once again, we see that the log model performs better. Even in 10-fold cross validation the residual sum of squares for the log model is a fraction of the square-root model, further indicating to us that the log model is far better than the square root model just based off of prediction capabilities.
+
+The last method of cross validation we are going to look at is the simple train and test split, which is just a basic version of the k-fold cross validation, however we will be taking multiple permutations of the values to get an overall average.
+```{r}
+detectCores()
+cl <- makeCluster(6)
+registerDoParallel(cl)
+getDoParWorkers()
+```
+```{r}
+set.seed(523)
+
+foreach(i = 1:1000, .combine="+", .options.RNG = 523) %dopar% {
+  set = sample(dim(MinnLand2)[1], 6000, replace = FALSE)
+  logsimp <- lm(log(acrePrice)~region+improvements+yearF+acres+tillable+financing+crpPct+productivity,    data=MinnLand2[set,])
+  preds <- predict(logsimp, newdata=MinnLand2[-set,])
+  y_true <- log(MinnLand2$acrePrice[-set])
+  sum((y_true - preds)^2)
+}
+```
+Now we see that our RSS is a lot bigger for the log model. That is usually the case when you do random splitting as opposed to k-fold cross validation. Finally I am going to do the same, but this time with the square root version. We then will compare the metric scores before finally deciding on a model and doing our analysis from there. 
+```{r}
+set.seed(524)
+
+foreach(i = 1:1000, .combine = "+", .options.RNG = 524) %dopar% {
+  set = sample(dim(MinnLand2)[1], 6000, replace = FALSE)
+  sqrtsimp <- lm(sqrt(acrePrice)~region+improvements+yearF+acres+tillable+financing+crpPct+productivity,   data = MinnLand2[set,])
+  preds <- predict(sqrtsimp, newdata = MinnLand2[-set,])
+  y_true <- sqrt(MinnLand2$acrePrice[-set])
+  sum((y_true - preds)^2)
+}
+```
+Once again, the log residual sum of squares is far smaller than the square root residual sum of squares. We can safely go with the log model, as that has had better prediction accuracy every sinlge time we compared the two models no matter what cross validation method we introduced.
+```{r}
+summary(minnlandlog)
+```
+As stated earlier, the intercept is the base line for our factor variables giving us the mean at the northwest region in the year 2002, with a title-transfer financing. What this is telling us is that with everything held constant at 0, the price of an acre in log form is 5.63 dollars. Each consecutive region adjusts from the base line or intercept, but only tells you the data in the year 2002. For instance, if we were to move to the West central region, it would add about 63.8% (in the log form of acrePrice) while still being in the year 2002.The year adjustments adjust for the year within the northwest region if nothing else was done. For instance, the year 2005 only adds about 45% from the baseline, however it is still only considered for the northwest region. If productivity were to increase by 1 unit, then acrePrice would increase by .928%. With a unit increase of all the farm acres enrolled in CRP (crpPct), the acre price decreases by .38%. If tillable were to increase by 1 unit, then acre price would increase by .40%. With a unit increase of improvements, then acre price would increase by 1.57%. Going from seller financed to title transfer, you would see a decrease of acre price by about 5.7%. With a unit increase acres, acre price would decrease by .03%. Finally with a unit increase in improvements, acre price would increase by 1.57%.
