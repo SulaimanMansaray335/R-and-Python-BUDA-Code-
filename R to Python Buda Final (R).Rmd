@@ -1,0 +1,982 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+In the Credit data in the ISLR package it contains 400 customers and information on their credit history. For full information of the data look at the help file. A company has approached us to better understand factors that influence the Balance variable which is average credit card balance in USD. Using the information in the model discuss the influential factors, and discuss the factors you choose to put in the model. Do you have any concerns about the use of certain variables in the model? Discuss how your model was created and any insights you can provide based on the results. HINT: Adding Gender and/or Ethnicity could be controversial or illegal in some uses of this this model you should discuss your decision on these variables and how it effects the organizations ability to use your model for prediction or inference.
+
+To get a better understanding of the features that influence the average credit card balance, we will explore various modeling methods as well as how they impact the variables we are working with. Since our primary focus in this section is inference, the need for any prediction accuracy metric is not needed for what we are doing. We will begin by doing our usual exploratory data analysis.
+
+```{r}
+options(devise.ask.default = FALSE)
+library(ISLR)
+library(alr4)
+library(lmtest)
+library(statmod)
+library(tweedie)
+library(splines)
+library(arm)
+library(PRROC)
+library(caret)
+library(tidymodels)
+library(yardstick)
+library(dplyr)
+library(rsample)
+data(Credit)
+Credit$Balance_plus <- Credit$Balance + 10
+Credit$Balance_log <- log(Credit$Balance_plus)
+Credit$Balance_sqrt <- sqrt(Credit$Balance)
+Credit$Education_t <- cut(Credit$Education, breaks = c(5, 13, 21), labels = c("low education", "high education"), right = FALSE)
+Credit$Education <- as.factor(Credit$Education_t)
+Credit$Gender <- as.factor(Credit$Gender)
+Credit$Student <- as.factor(Credit$Student)
+Credit$Married <- as.factor(Credit$Married)
+Credit$Ethnicity <- as.factor(Credit$Ethnicity)
+head(Credit)
+
+```
+
+```{r}
+summary(Credit)
+```
+We see we are working with a dataset of about 400 observations and 12 variables. Immediately we can see that certain variables may be due for some transformation. Since our response is Balance, that seems to go over several orders of magnitude. It also contains zeros. We will probably have to do a log transformation with this one, but before we do, we had to make sure we cover for any 0's by creating another column, "Balance_plus", as well as "Balance_log".
+
+Now we can begin to actually fit our model. We will start by fitting almost all of the variables without the need of doing any type of transformation. Balance will be our response variable with everything else as our predictors.
+
+```{r}
+plot(Credit)
+```
+```{r}
+creditm1 <- lm(Balance~Income+Limit+Rating+Cards+Age+Education+Gender+Student+Married+Ethnicity, data = Credit)
+print(summary(creditm1))
+```
+We now have a fit. We see a lot of insignificance, especially between levels of certain factors, however before we do any type of interpretation, it is best that we check that our assumptions have been met.
+```{r}
+par(mfrow=c(2,2), ask = FALSE)
+plot(creditm1)
+```
+```{r}
+residualPlots(creditm1, ask = FALSE)
+resettest(creditm1, power = 2:3, type = "regressor")
+resettest(creditm1, power = 2:3, type = "fitted")
+```
+
+```{r}
+ncvTest(creditm1)
+bptest(creditm1)
+```
+
+```{r}
+vif(creditm1)
+```
+
+```{r}
+outlierTest(creditm1)
+```
+```{r}
+infl <- data.frame(
+           hat  =   hatvalues(creditm1),
+           cooks = cooks.distance(creditm1),
+           rstandard = rstandard(creditm1),
+           rstudent = rstudent(creditm1)
+)
+
+infl <- infl[order(infl$cooks, decreasing = TRUE),]
+print(head(infl))
+```
+
+```{r}
+Anova(creditm1, type = 'II')
+avPlots(creditm1, ask = FALSE)
+```
+
+We see that we have pretty much violated almost all of our assumptions. We have heteroskedasticity, no linearity, multicollinearity, no normality of errors, etc. Before we try to fix this one model, we can see what transformations of the response does. We can try a square root transformation, a quadratic transformation, and a log transformation.
+
+```{r}
+creditm2 <- lm(sqrt(Balance)~Income+Limit+Rating+Cards+Age+Education+Gender+Student+Married+Ethnicity, data = Credit)
+print(summary(creditm2))
+```
+
+```{r}
+par(mfrow=c(2,2), ask = FALSE)
+plot(creditm2)
+```
+
+```{r}
+residualPlots(creditm2, ask = FALSE)
+resettest(creditm2, power = 2:3, type = "regressor")
+resettest(creditm2, power = 2:3, type = "fitted")
+```
+
+```{r}
+ncvTest(creditm2)
+bptest(creditm2)
+```
+
+```{r}
+vif(creditm2)
+```
+
+```{r}
+outlierTest(creditm2)
+```
+```{r}
+infl <- data.frame(
+      hat = hatvalues(creditm2),
+      cooks = cooks.distance(creditm2),
+      rstandard = rstandard(creditm2),
+      rstudent = rstudent(creditm2)
+)
+
+infl <- infl[order(infl$cooks, decreasing = TRUE),]
+print(head(infl))
+```
+
+
+```{r}
+Anova(creditm2, type = 'II')
+avPlots(creditm2, ask = FALSE)
+```
+
+Once again we see a similar story, everything was violated. The next one we will try is a quadratic transformation.
+
+```{r}
+creditm3 <- lm(I(Balance^2)~Income+Limit+Rating+Cards+Age+Education+Gender+Student+Married+Ethnicity, data = Credit)
+print(summary(creditm3))
+```
+
+```{r}
+par(mfrow=c(2,2), ask = FALSE)
+plot(creditm3)
+```
+
+```{r}
+residualPlots(creditm3, ask = FALSE)
+resettest(creditm3, power = 2:3, type = "regressor")
+resettest(creditm3, power = 2:3, type = "fitted")
+```
+```{r}
+ncvTest(creditm3)
+bptest(creditm3)
+```
+
+
+```{r}
+vif(creditm3)
+```
+
+```{r}
+outlierTest(creditm3)
+```
+```{r}
+infl <- data.frame(
+  hat = hatvalues(creditm3),
+  cooks = cooks.distance(creditm3),
+  rstudent = rstudent(creditm3),
+  rstandard = rstandard(creditm3)
+)
+
+infl <- infl[order(infl$cooks, decreasing = TRUE), ]
+print(head(infl))
+```
+
+
+```{r}
+Anova(creditm3, type = 'II')
+avPlots(creditm3, ask = FALSE)
+```
+
+Same story, lastly we will try the log transformation.
+
+```{r}
+creditm4 <- lm(Balance_log~Income+Limit+Rating+Cards+Age+Education+Gender+Student+Married+Ethnicity, data = Credit)
+print(summary(creditm4))
+```
+
+```{r}
+par(mfrow=c(2,2), ask = FALSE)
+plot(creditm4)
+```
+
+```{r}
+residualPlots(creditm4, ask = FALSE)
+resettest(creditm4, power = 2:3, type = 'regressor')
+resettest(creditm4, power = 2:3, type = 'fitted')
+```
+
+```{r}
+ncvTest(creditm4)
+bptest(creditm4)
+```
+
+```{r}
+vif(creditm4)
+```
+
+```{r}
+outlierTest(creditm4)
+```
+```{r}
+infl <- data.frame(
+    hat = hatvalues(creditm4),
+    cooks = cooks.distance(creditm4),
+    rstandard = rstandard(creditm4),
+    rstudent = rstudent(creditm4)
+    )
+
+infl <- infl[order(infl$cooks, decreasing = TRUE),]
+print(head(infl))
+```
+```{r}
+Anova(creditm4, type = 'II')
+```
+```{r}
+avPlots(creditm4, ask = FALSE)
+```
+
+Based off of all of these, square root model actually performed the best with the constant variance being fixed, however there were still other violations that prevents us from choosing that model for any valid inferences. We can try a power-transformations to see what they suggest for us.
+
+```{r}
+summary(powerTransform(cbind(Balance_plus, Income, Limit, Rating, Age, Cards) ~ 1, Credit))
+```
+We see from our multivariate transformation, that we would need to transform our numerical variables to something that would be hard for us to explain without a visual effects plot. We will go ahead and fit the model with the recommendations and check to see if our assumptions have been met.
+```{r}
+creditpre <- lm(I(Balance_plus^0.48)~I(Income^0.38)+I(Limit^0.77)+I(Rating^0.69)+I(Cards^0.37)+I(Age^0.81)+Education+Gender+Student+Married+Ethnicity, data = Credit)
+print(summary(creditpre))
+```
+```{r}
+par(mfrow=c(2,2), ask = FALSE)
+plot(creditpre)
+```
+```{r}
+residualPlots(creditpre, ask = FALSE)
+resettest(creditpre, power = 2:3, type ='regressor')
+resettest(creditpre, power = 2:3, type = 'fitted')
+```
+```{r}
+ncvTest(creditpre)
+bptest(creditpre)
+```
+```{r}
+vif(creditpre)
+```
+```{r}
+outlierTest(creditpre)
+```
+```{r}
+infl <- data.frame(
+    hat = hatvalues(creditpre),
+    cooks = cooks.distance(creditpre),
+    rstandard = rstandard(creditpre),
+    rstudent = rstudent(creditpre)
+)
+
+infl <- infl[order(infl$cooks, decreasing = TRUE),]
+print(head(infl))
+```
+
+
+```{r}
+Anova(creditpre, type = 'II')
+```
+```{r}
+avPlots(creditpre, ask = FALSE)
+```
+The multivariate transformation was supposed to fix our assumption of normality, however we do see some of the tails that are a bit off, possibly due to outliers. Our assumption of homoscedasticity was fixed. We still see a violation of linearity as well as correlated variables in Rating and Limit. We can present this as is, or we can try to fit other higher ordered terms to see if we get an even better inference.
+
+```{r}
+credittrue <- lm(Balance_log~bs(log(Income), df = 8)+bs(log(Limit), df = 8)+bs(Rating, df = 4)+bs(log(Income), df = 8)*Student+bs(log(Limit), df = 8)*Student+Cards+Age+Education+Gender+Student+Married+Ethnicity, data = Credit)
+
+print(summary(credittrue))
+```
+```{r}
+par(mfrow=c(2,2), ask = FALSE)
+plot(credittrue)
+```
+```{r}
+residualPlots(credittrue, ask = FALSE)
+resettest(credittrue, power = 2:3, type = 'regressor')
+resettest(credittrue, power = 2:3, type = 'fitted')
+```
+```{r}
+ncvTest(credittrue)
+bptest(credittrue)
+```
+```{r}
+vif(credittrue)
+```
+```{r}
+outlierTest(credittrue)
+```
+```{r}
+infl <- data.frame(
+      hat = hatvalues(credittrue),
+      cooks = cooks.distance(credittrue),
+      rstandard = rstandard(credittrue),
+      rstudent = rstudent(credittrue)
+)
+
+infl <- infl[order(infl$cooks, decreasing = TRUE),]
+print(head(infl))
+```
+
+
+```{r}
+Anova(credittrue, type = 'II')
+```
+```{r}
+avPlots(credittrue, ask = FALSE)
+```
+Now this model is more of a generalized additive model that uses b-splines. This time we are using the log version of the model as we noted earlier, that covers several magnitudes when we look at its range. This model fixes the linearity assumption, however it does violate the assumption of homoscedasticity unlike the previous model. We have a lot of multicollinearity, but that is expected when dealing with basis splines and other GAMs, we do know that Rating and Limit have consistently been co-linear even from our previous simpler models.
+
+Looking at the ANOVA, almost every single variable looks to be significant with the exception of a few categorical ones, meaning we don't really have to remove anything, we can still try to fit a sub-model without several of them and then use our ANOVA to test whether they give us the same information.
+```{r}
+credittrue2 <- lm(Balance_log~bs(log(Income), df = 8)+bs(log(Limit), df = 8)+bs(log(Income), df = 8)*Student+bs(log(Limit), df = 8)*Student+Cards+Education+Gender+Student+Ethnicity, data = Credit)
+print(summary(credittrue2))
+```
+```{r}
+par(mfrow=c(2,2), ask = FALSE)
+plot(credittrue2)
+```
+```{r}
+residualPlots(credittrue2, ask = FALSE)
+resettest(credittrue2, power = 2:3, type = 'regressor')
+resettest(credittrue2, power = 2:3, type = 'fitted')
+```
+```{r}
+ncvTest(credittrue2)
+bptest(credittrue2)
+```
+```{r}
+vif(credittrue2)
+```
+```{r}
+outlierTest(credittrue2)
+```
+```{r}
+infl <- data.frame(
+    hat = hatvalues(credittrue2),
+    cooks = cooks.distance(credittrue2),
+    rstandard = rstandard(credittrue2),
+    rstudent = rstudent(credittrue2)
+)
+
+infl <- infl[order(infl$cooks, decreasing = TRUE),]
+
+print(head(infl))
+```
+
+
+```{r}
+Anova(credittrue2, type = 'II')
+```
+```{r}
+avPlots(credittrue2, ask = FALSE)
+```
+```{r}
+anova(credittrue2, credittrue)
+```
+The ANOVA tells us that both models are the not same, so we will go with the more complex, but let us do some more diagnostics with the simpler ones anyway.
+
+There is one last thing we must do, I want to look at the importance of several categorical variable and whether we can get away with a simpler model. To do that, we will do an ANOVA to compare the model we just made now, with a simpler model only using the cubic basis-splines for Income, Limit, Student and a combination of those with Student. All other variables we currently have, will be dropped on the predictor side.
+```{r}
+credittrue3 <- lm(Balance_log~bs(log(Income), df = 8)+bs(log(Limit), df = 8)+bs(log(Income), df = 8)*Student+bs(log(Limit), df = 8)*Student+Student, data = Credit)
+anova(credittrue3, credittrue2)
+```
+The ANOVA tells us that we can NOT get away with an even simpler model using just the three variables we discussed earlier, BUT let's run the diagnostics for this anyway!
+```{r}
+par(mfrow=c(2,2), ask = FALSE)
+plot(credittrue3)
+```
+```{r}
+residualPlots(credittrue3, ask = FALSE)
+resettest(credittrue3, power = 2:3, type = 'regressor')
+resettest(credittrue3, power = 2:3, type = 'fitted')
+```
+
+```{r}
+ncvTest(credittrue3)
+bptest(credittrue3)
+```
+```{r}
+vif(credittrue3)
+```
+```{r}
+outlierTest(credittrue3)
+```
+```{r}
+infl <- data.frame(
+    hat = hatvalues(credittrue3),
+    cooks = cooks.distance(credittrue3),
+    rstandard = rstandard(credittrue3),
+    rstudent = rstudent(credittrue3)
+)
+
+infl <- infl[order(infl$cooks, decreasing = TRUE), ]
+print(head(infl))
+```
+
+
+It seems as if we are still reaching the threshold for linearity. Since we are using robust standard-errors we can ignore the violation for homoscedasticity. We have some co-linearity with the basis-splines which is expected and we do see some outliers. Now, our assumption for normality is extremely off, but since that is our weakest assumption, we will work with it for now. The most important thing right now is to see what our variables are telling us.
+
+```{r}
+print(summary(credittrue3))
+```
+```{r}
+Anova(credittrue3, type = 'III')
+```
+```{r}
+avPlots(credittrue3, ask = FALSE)
+```
+
+
+Due to the complexity of our GAMs and Cubic Basis-Splines, the best way to show the affects of this model is to utilize an effects plot for each of the complex spline variables, holding all other variables constant.
+
+For the splines as discussed earlier, we will need to showcase an effects plot to show how the variables with splines behave with different inputs. The lone variable, Student, is more interpretable through our summary table, however, we can see that it has a p-value of .938. While the main effect of Student status is not significant, the ANOVA indicates that Student has a statistically significant impact on the response through its nonlinear interactions with Income and Limit. This means that Student status does not uniformly shift Balance levels, but it does alter the shape of the relationship between Income, Limit, and Balance.
+```{r}
+plot(Effect('Income', credittrue))
+```
+
+```{r}
+plot(Effect('Limit', credittrue))
+```
+We see that with everything held constantly, as Income increases, the log of Balance seems to decrease which possibly tells us that the more money that one makes, the less need to utilize a lending product such as a credit card. This is, of course, being a non-student. We also see in the second effects plot that, while being a non-student, as the limit increases, the log of balance seems to increase. This can possibly tell us that, the more one has, the more they tend to spend without being too conscious of the fact that they have to pay back what they borrow. Of course, we can not come to that exact conclusion as to why the log of balance increase in this situation.
+
+This is the best we have within the linear regression setting, but going back to our histogram from the very beginning, we notated a heavy right skew with a heavy concentration of values at 0 for the Balance distribution. That indicated that a GAMMA or Tweetie model may have been the more appropriate method, so we will build that one out before looking at prediction capabilities of our models. The Tweetie model has more relaxed assumptions and is far more accurate for situations like this.
+```{r}
+powers <- seq(1.1, 1.8, by = 0.1)
+
+#Credit$Limit_log <- log(Credit$Limit + 1)
+
+p_prof <- tweedie.profile(Balance~Income*log(Limit)+bs(Rating, df = 4)+Cards+Age+Education+Gender+Student+Married+Ethnicity, data = Credit, p.vec = powers, control = glm.control(maxit = 10000))
+
+best_p <- p_prof$p.max
+print(paste('best P:', best_p))
+```
+```{r}
+credittweed <- glm(Balance~Income*log(Limit)+bs(Rating, df = 4)+Cards+Age+Education+Gender+Student+Married+Ethnicity, data = Credit, family = tweedie(var.power = best_p, link.power = 0))
+
+summary(credittweed)
+```
+```{r}
+Anova(credittweed, test.statistic = 'Wald')
+```
+We see our initial model and we also see that several of our variables are insignificant in this setting. We see an expected increase of about 7.2% in the balance when we go from 1 card to 2 cards, and an increase of about 7.7% when we go from 1 card to 3 cards. In fact we see an expected increase in balance when we go from one card to any amount of card. Keep in mind, these levels are only significant when we have 6 and 7 cards, but anything more or less than that reads as insignificant. We see several of our factors as insignificant like being married, ethnicity, education and gender. With income, each 1% increase in Income results in an expected decrease in balance of about 20%. Holding all things constant, with the log of limit we see an increase of 2.1% for every 1% increase in log of limit. The interaction between income and log of limit shows us that the effect of credit limit on balance depends on income and vice versa; as income increases, the percentage increase in expected balance associated with a 1% increase in credit limit becomes larger. In other words, the positive interaction between these two variables indicate that higher-income individuals exhibit a stronger increase in expected balance as credit limits rise, suggesting that additional credit availability is utilized more aggressively at higher income levels. As before, splines are not interpretable through here so we will show an effects plot at the end. Lastly, age indicates as age goes up 1%, we expect a .10% decrease in the expected balance. As always, we always want to diagnose all of our statistical models and this will be no different.
+
+
+```{r}
+par(mfrow=c(2,2), ask = FALSE)
+plot(credittweed)
+```
+```{r}
+idsx <- NULL
+for(name in colnames(model.matrix(credittweed))[-1]){
+  idsx <- c(idsx, name)
+}
+
+par(mfrow=c(3,4), ask = FALSE)
+for(i in idsx){
+  plot(model.matrix(credittweed)[,i], resid(credittweed, type = 'deviance'), xlab = i, ylab = 'Deviance Residuals')
+  abline(h=0, col = 'red')
+}
+par(mfrow=c(1,1), ask = FALSE)
+print(paste("Deviance:", pchisq(deviance(credittweed), df.residual(credittweed), lower = FALSE)))
+```
+
+
+
+```{r}
+idsx <- NULL
+for( i in colnames(model.matrix(credittweed))[-1]){
+  idsx <- c(idsx, i)
+}
+
+
+
+par(mfrow = c(3,4), ask = FALSE)
+for(i in idsx){
+  partial <- model.matrix(credittweed)[,i]*credittweed$coefficients[i]+residuals(credittweed, type = 'deviance')
+  plot(model.matrix(credittweed)[,i], partial, xlab = i, ylab = 'Partial Devaince Residuals')
+  abline(h = 0, col = 'red')
+}
+par(mfrow=c(1,1), ask = FALSE)
+
+```
+
+
+```{r}
+residualPlots(credittweed, ask = FALSE)
+print(sum(residuals(credittweed, type = 'pearson')^2)/(df.residual(credittweed)))
+```
+```{r}
+vif(credittweed)
+```
+```{r}
+infl <- data.frame(
+  hat = hatvalues(credittweed),
+  cooks = cooks.distance(credittweed),
+  rstandard = rstandard(credittweed),
+  rstudent = rstudent(credittweed)
+)
+
+infl <- infl[order(infl$cooks, decreasing = TRUE),]
+head(infl)
+```
+Our diagnostics check out several things; our deviance residuals vs fitted seems to show a claw despite most of the data being smooth. This claw around the lower fitted values can indicate structural zeros and if that is the case, we may have to move to a hurdle model which means we would need to create a logistic regression model to indicate whether an account will have a 0 or not and then use a gamma regression instead for our analysis since we will be utilizing a data set completely void of zeros. Other things to point is although our pearson residuals seem a bit flat, however our dispersion score is way above the acceptable value of 1 which could indicate some issues with our variance assumption as the variance must grow with the mean for gamma/tweedie. We also see some multi-collinearity between main affects of income, log of limit and their interaction value which is normal. We also see multi-collinearity with splines which is also normal. We also see we have several observations that are beyond the threshold for cook's distance. Lastly, our deviance score was 0. That indicates that the model likelihood matches that of the saturated model. This is expected in a tweedie models when strong predictors perfectly explain the zero mass and the positive mean structure. As a result, deviance-based goodness-of-fit statistics are not informative in this setting.
+
+We will move on to a hurdle model next.
+
+Lastly, we can do an Elastic-Net regularization to see which terms are utilized the best for prediction. We will include every single term that we had in the credittrue model as our candidate model. Then we will utilize only the terms in the credittrue3 model to see if the simpler model predicts just as well as the more complex one. We will do an Elastic-Net pipeline that will allow us to select the best L1 ratio as well as the best alpha value for each model.
+```{r}
+Credit$has_bal <-(Credit$Balance > 0)
+
+creditbin <- glm(has_bal~Income+Limit+Cards+Age+Education+Gender+Married+Ethnicity, data = Credit, family = 'binomial')
+print(summary(creditbin))
+```
+```{r}
+Anova(creditbin, test.statistic = 'Wald')
+```
+
+
+```{r}
+par(mfrow=c(2,2), ask = FALSE)
+plot(creditbin)
+```
+```{r}
+binnedplot(predict(creditbin), residuals(creditbin))
+```
+```{r}
+binnedplot(creditbin$fitted.values, model.response(model.frame(creditbin)), xlab = 'Mean Predicted Probability', ylab = 'Observed Fraction', main = 'Calibration Plot')
+abline(0, 1, lty = 2)
+```
+
+```{r}
+idsx <- NULL
+for(i in colnames(model.matrix(creditbin))[-1]){
+  idsx <- c(idsx,i)
+}
+
+par(mfrow = c(3,4), ask = FALSE)
+for(i in idsx){
+  binnedplot(model.matrix(creditbin)[,i], residuals(creditbin), xlab = i, ylab = 'Deviance Residuals (binned)')
+  abline(h = 0, col = 'red')
+}
+par(mfrow = c(1,1), ask = FALSE)
+```
+```{r}
+
+idsx <- NULL
+for(i in colnames(model.matrix(creditbin))[-1]){
+  idsx <- c(idsx, i)
+}
+
+par(mfrow=c(3,4), ask = FALSE)
+for(i in idsx){
+  partial <- model.matrix(creditbin)[,i]*creditbin$coefficients[i] + residuals(creditbin, type = 'working')
+  plot(model.matrix(creditbin)[,i], partial, xlab = i, ylab = 'Partial Residuals')
+  abline(h = 0, col = 'red')
+}
+par(mfrow=c(1,1), ask = FALSE)
+
+y <- Credit$has_bal
+p_te <- predict(creditbin, newdata = Credit, type = 'response')
+y <- as.numeric(y)
+p_te <- as.numeric(p_te)
+p_te <- pmin(pmax(p_te, 1e-12), 1 - 1e-12)
+l_p <- log(p_te/(1 - p_te))
+fit <- glm(y~l_p, family = binomial())
+ 
+intercept <- unname(fit$coefficients[1])
+slope <- unname(fit$coefficients[2])
+ 
+print(paste("Calibration Intercept:", intercept))
+print(paste("Calibration Slope:", slope))
+```
+
+```{r}
+residualPlots(creditbin, ask = FALSE)
+print(sum(residuals(creditbin, type = 'pearson')^2)/df.residual(creditbin))
+```
+```{r}
+vif(creditbin)
+```
+```{r}
+infl <- data.frame(
+  hat = hatvalues(creditbin),
+  cooks = cooks.distance(creditbin),
+  rstandard = rstandard(creditbin),
+  rstudent = rstudent(creditbin)
+)
+
+infl <- infl[order(infl$cooks, decreasing = TRUE), ]
+head(infl)
+```
+The diagnostic deviance plot shows that we have our fitted values centered around 0, however we do seem to be off in some areas, however we do not see a trend or any obvious curvature. Our QQ plot, although not as appropriate as in the OLS setting, shows that we have no outliers that may be 4 standard deviations away. Our calibration plot also seems to be well aligned. We also see very little outliers in general although there are two that has appeared in the tweedie model as well, observations 205 and 383. Our deviance vs covariate plots show exactly what was confirmed by the summary plot in regards to important variables as the binned deviance plot for the covariates show limit and income being strongly centered around 0, age looking more flat and less concentrated. We do not see an obvious curve or trend in any of the plots. Our pearson residual plots also show a flat cloud and combined with a dispersion parameter of about 1.4, there isn't too much to worry about. We also do not have any multi-collinearity.
+
+```{r}
+y_true <- Credit$has_bal
+y_score <- predict(creditbin, type = 'response')
+
+
+pr <- pr.curve(scores.class0 = y_score[y_true == TRUE],
+               scores.class1 = y_score[y_true == FALSE],
+               curve = TRUE)
+
+plot(pr)
+pr$auc.integral
+```
+
+```{r}
+library(caret)
+cands <- quantile(y_score, seq(0.05, 0.95, by = 0.05))
+
+results <- data.frame()
+
+for(t in cands){
+  pred <- factor(ifelse(y_score > t, 1, 0), levels = c(0,1))
+  truth <- factor(y_true, levels = c(0,1))
+  
+  cm <- confusionMatrix(pred, truth, positive = '1')
+  
+  results <- rbind(
+    results, 
+    data.frame(
+      threshold = t,
+      precision = cm$byClass["Precision"],
+      recall    = cm$byClass["Recall"],
+      F1        = cm$byClass["F1"]
+    )
+  )
+}
+
+results
+```
+
+```{r}
+set.seed(300)
+Credit_split <- initial_split(Credit, prop = .80)
+Credit_train <- training(Credit_split)
+Credit_test <- testing(Credit_split)
+
+creditbinmini <- glm(has_bal~Income+Limit+Cards+Age+Education+Gender+Married+Ethnicity, family = 'binomial', data = Credit_train)
+pred_test <- predict(creditbinmini, newdata = Credit_test, type = 'response')
+brier <- mean((pred_test - Credit_test$has_bal)^2)
+
+pres2 <- predict(creditbinmini, newdata = Credit_test, type = 'response')
+pres2 <- as.numeric(pres2)
+pres2 <- pmin(pmax(pres2, 1e-12), 1 - 1e-12)
+log_pres2 <- log(pres2/(1 - pres2))
+fit <- glm(has_bal~log_pres2, family = 'binomial', data = Credit_test)
+
+intercept <- unname(fit$coefficients[1])
+slope <- unname(fit$coefficients[2])  
+
+print(paste("Brier Score:", brier))
+print(paste("Calibration Intercept:", intercept))
+print(paste("Calibration Slope:", slope))
+```
+```{r}
+K <- 10
+breaks <- quantile(pred_test, probs = seq(0, 1, length.out = K +1), na.rm = TRUE)
+breaks[1] <- -Inf; breaks[length(breaks)] <- Inf
+
+bin <- cut(pred_test, breaks = breaks, include.lowest = TRUE)
+
+cal_df <- aggregate(
+  cbind(mean_pred = pred_test, frac_pos = Credit_test$has_bal) ~ bin,
+  FUN = mean
+)
+
+plot(cal_df$mean_pred, cal_df$frac_pos, xlab = "Mean Predicted Probability", ylab= "Observed Fraction Positive", pch = 19)
+lines(cal_df$mean_pred, cal_df$frac_pos)
+abline(0, 1, col = 'red', lwd = 2)
+title("Test Calibration")
+```
+
+
+The Precision-Recall curve shows near-perfect separation between classes, with an average precision of .997. Precision remains above 99% across a wide range of recall values, indicating that the model maintains a very low false-positive rate even when aggressively identifying positive cases. This is especially meaningful given class imbalance, where PR-AUC is more informative than ROC-AUC.
+
+Now, we will create a gamma model, which is a tweedie model with powers = 2. This will only use positive balance information.
+
+```{r}
+cred <- Credit[Credit$Balance > 0,]
+plot(cred)
+```
+```{r}
+summary(cred)
+```
+```{r}
+creditgam <- glm(Balance~Income*log(Limit)+bs(Rating, df = 4)+Cards+Age+Education+Gender+Student+Married+Ethnicity, data = cred, family = Gamma(link = 'log'))
+print(summary(creditgam))
+```
+With the exact same variables as the tweedie model, we see that the same variables are significant, but we also see some new ones that now matter. Age seems to now matter. Going from Black to Asian, doesn't matter, but going from Black to White does. Having more than 3 cards also seems to be significant. We also see that our deviance value has dramatically decreased where before it was 8,126 and now it is 26.11. This model is significantly better. Now for the rest of our diagnostics.
+```{r}
+par(mfrow = c(2,2), ask = FALSE)
+plot(creditgam)
+```
+```{r}
+idsx <- NULL
+for(i in colnames(model.matrix(creditgam))[-1]){
+  idsx <- c(idsx, i)
+}
+
+par(mfrow = c(3,4), ask = FALSE)
+for(i in idsx){
+  plot(model.matrix(creditgam)[,i], residuals(creditgam, type = 'deviance'), xlab = i, ylab = 'Deviance Residuals', main = 'Deviance Residuals')
+}
+par(mfrow = c(1,1), ask = FALSE)
+
+print(pchisq(deviance(creditgam), df.residual(creditgam), lower = FALSE))
+```
+```{r}
+idsx <- NULL
+for(i in colnames(model.matrix(creditgam))[-1]){
+  idsx <- c(idsx, i)
+}
+
+par(mfrow = c(3,4), ask = FALSE)
+for(i in idsx){
+  partial <- model.matrix(creditgam)[,i] * creditgam$coefficients[i] + residuals(creditgam, type = 'deviance')
+  plot(model.matrix(creditgam)[,i], partial, xlab = i, ylab = 'Partial Residuals', main = 'Partial Residuals')
+}
+par(mfrow = c(1,1), ask = FALSE)
+```
+```{r}
+residualPlots(creditgam, ask = FALSE)
+print(sum(residuals(creditgam, type = 'pearson')^2)/df.residual(creditgam))
+```
+```{r}
+vif(creditgam)
+```
+```{r}
+infl <- data.frame(
+  hat = hatvalues(creditgam),
+  cooks = cooks.distance(creditgam),
+  rstandard = rstandard(creditgam),
+  rstudent = rstudent(creditgam)
+)
+
+infl <- infl[order(infl$cooks, decreasing = TRUE),]
+head(infl)
+```
+
+Our diagnostics look even better than the tweedie. We do not see any trend or obvious curvature in the deviance residuals and even have a deviance score of 1, much better than the 0 we received for the tweedie model. We see that we have no curvature or obvious trends when it comes to the our deviance residuals as well so linearity checks out. Our pearson residual plots show a flat cloud indicating that the variance assumption is met and is supported by dispersion score that is below 1 meaning that we may have overfit our model. Regardless, we can go forward with the summary and interpretations.
+```{r}
+print(summary(creditgam))
+```
+```{r}
+Anova(creditgam, test.statistic = "Wald")
+```
+```{r}
+plot(effect('Rating', creditgam))
+```
+With the exact same variables as the tweedie model, we see that the same variables are significant, but we also see some new ones that now matter. Age seems to now matter with each 1% increase in age coinciding with a .26% decrease in expected Balance holding all else constant.. Having more than 3 cards also seems to be significant as each level past two cards seems to rise. If you are a student, expect your balance to rise about 97% and for each percentage increase in income, your expected balance will drop by 20%. Every 1% increase in the log of limit coincides with a 2.4% increase in the expected value of Balance. Once again, with the interaction term, it tells us that the higher the income you are, your expected increase in balance for each percentage increase in limit increases.With rating, we are using a cubic basis-spline, visually we can see how that variable behaves. At low values of rating, we have a high variance, but as rating's score increases, we see the variance tighten up, especially at ratings of 400 the balance is around 500. We also see that our deviance value has dramatically decreased where before it was 8,126 and now it is 26.11. This model is significantly better.
+
+We can conclude that our Gamma regression and our hurdle model overall is a significantly better model than the tweedie model due to the structural zeros in the data. However, is it a better model than the linear regressions that we created? Inference wise, there is no doubt that it is better, but the best way to truly confirm which is a better model for prediction purposes is through cross validation.
+
+The first part of the cross validation, we will compare the full credittrue model to the reduced credittrue3 model, to further see if the larger model is better since we know due to the ANOVA that the larger model was a better model when it came to inferences. Now, we will compare their prediction ability.
+
+```{r}
+set.seed(0)
+
+split_obj <- initial_split(Credit, prop = 0.80)
+train_df <- training(split_obj)
+test_df <- testing(split_obj)
+
+enet_pipe <- linear_reg(penalty = tune(), mixture = tune()) %>% set_engine('glmnet')
+
+wf_full <- workflow() %>% add_model(enet_pipe) %>% add_formula(Balance_log~bs(log(Income), df = 8)+bs(log(Limit), df = 8)+bs(Rating, df = 4)+bs(log(Income), df = 8)*Student+bs(log(Limit), df = 8)*Student+Cards+Age+Education+Gender+Student+Married+Ethnicity)
+
+wf_reduced <- workflow() %>% add_model(enet_pipe) %>% add_formula(Balance_log~bs(log(Income), df = 8)+bs(log(Limit), df = 8)+bs(log(Income), df = 8)*Student+bs(log(Limit), df = 8)*Student+Student)
+
+folds <- vfold_cv(train_df, v = 10)
+
+mset <- metric_set(rsq, mae, yardstick::rmse)
+
+grid <- grid_latin_hypercube(
+  penalty(range = c(-6, 1)),
+  mixture(range = c(0, 1)),
+  size = 50
+)
+
+ctrl <- control_grid(save_pred = TRUE)
+
+tune_full <- tune_grid(
+  wf_full, resamples = folds, grid = grid, 
+  metrics = mset, control = ctrl
+)
+
+tune_reduced <- tune_grid(
+  wf_reduced, resamples = folds, grid = grid, 
+  metrics = mset, control = ctrl
+)
+
+best_full <- select_best(tune_full, metric = 'rsq')
+best_reduced <- select_best(tune_reduced, metric = 'rsq')
+
+print("best alpha/lambda full:")
+print(best_full)
+print("best alpha/lambda reduced:")
+print(best_reduced)
+```
+
+```{r}
+print("R2, MAE, RMSE") 
+print(collect_metrics(tune_full)[collect_metrics(tune_full)$penalty == best_full$penalty, ])
+print("R2, MAE, RMSE")
+print(collect_metrics(tune_reduced)[collect_metrics(tune_reduced)$penalty == best_reduced$penalty, ])
+```
+
+
+```{r}
+final_full_fit <-
+  finalize_workflow(wf_full, best_full) %>%
+  fit(train_df)
+
+final_reduced_fit <-
+  finalize_workflow(wf_reduced, best_reduced) %>% 
+  fit(train_df)
+
+
+pred_full <- predict(final_full_fit, test_df) %>% bind_cols(test_df %>% select(Balance_log))
+pred_red <- predict(final_reduced_fit, test_df) %>% bind_cols(test_df %>% select(Balance_log))
+
+print("Hold Out Metrics")
+mset(pred_full, truth = Balance_log, estimate = .pred)
+mset(pred_red, truth = Balance_log, estimate = .pred)
+
+```
+
+```{r}
+tol <- 1e-6
+
+coef_full <-
+  final_full_fit %>%
+  extract_fit_parsnip() %>%
+  tidy() %>%
+  filter(term != "(Intercept)")
+
+chosen_full <- coef_full %>% filter(abs(estimate) > tol)
+neglected_full <- coef_full %>% filter(abs(estimate) <= tol)
+
+print("Chosen (Full Model):")
+print(chosen_full)
+print("Neglected (Full Model:")
+print(neglected_full)
+```
+
+```{r}
+coef_reduced <-
+  final_reduced_fit %>% 
+  extract_fit_parsnip %>%
+  tidy() %>%
+  filter(term != "(Intercept)")
+
+chosen_reduced <- coef_reduced %>% filter(abs(estimate) > tol)
+neglected_reduced <- coef_reduced %>% filter(abs(estimate) <= tol)
+
+print("Chosen (Reduced Model):")
+print(chosen_reduced)
+print("Neglected (Reduced Model):")
+print(neglected_reduced)
+``` 
+
+We can see that the more complex model, the credittrue one, barely outperformed the more simpler model. In several instances, the simpler model actually performed better when it came to k-fold cross validation. However, both the ANOVA and the hold out metrics tell us to go with the more complex linear regression model. We also see that the best regularization parameter says to use a full lasso model. Now, to compare the linear regression model with our GAMMA-Hurdle model.
+
+```{r}
+set.seed(300)
+form_lin = Balance_log~bs(log(Income), df = 8)+bs(log(Limit), df = 8)+bs(Rating, df = 4)+bs(log(Income), df = 8)*Student+bs(log(Limit), df = 8)*Student+Cards+Age+Education+Gender+Student+Married+Ethnicity
+
+
+form_bin = has_bal~Income+Limit+Cards+Age+Education+Gender+Married+Ethnicity
+
+
+form_gam = Balance~Income*log(Limit)+bs(Rating, df = 4)+Cards+Age+Student+Married+Ethnicity
+
+
+rmse <- function(y, yhat) sqrt(mean((y - yhat)^2, na.rm = TRUE))
+
+gamma_deviance <- function(y, mu){
+  eps <- 1e-12
+  y <- pmax(y, eps)
+  mu <- pmax(mu, eps)
+  mean(2 * (-log(y / mu) + (y - mu) / mu))
+}
+
+folds <- vfold_cv(Credit, v = 10)
+factor_vars <- c("Student", "Gender", "Married", "Ethnicity", "Education")
+lvl_list <- lapply(Credit[factor_vars], function(x) levels(factor(x)))
+
+out <- purrr::map_dfr(seq_along(folds$splits), function(i) {
+  sp <- folds$splits[[i]]
+  tr <- rsample::analysis(sp)
+  te <- rsample::assessment(sp)
+  
+  for (v in factor_vars) {
+    tr[[v]] <- factor(tr[[v]], levels = lvl_list[[v]])
+    te[[v]] <- factor(te[[v]], levels = lvl_list[[v]])
+  }
+  
+  x_tr <- model.matrix(form_lin, tr)[, -1, drop = FALSE]
+  y_tr <- tr$Balance_log
+  x_te <- model.matrix(form_lin, te)[, -1, drop = FALSE]
+  
+  alphas <- seq(0, 1, by = 0.01)
+  
+  cv_fits <- lapply(alphas, function(a) {
+    cv.glmnet(
+      x = x_tr, y = y_tr,
+      alpha = a,
+      nfolds = 10,
+      standardize = TRUE
+    )
+  })
+  
+  best_idx <- which.min(sapply(cv_fits, function(f) min(f$cvm)))
+  best_cv <- cv_fits[[best_idx]]
+  
+  yhat_log <- as.numeric(predict(best_cv, newx = x_te, s = 'lambda.min'))
+  yhat_lin <- exp(yhat_log)
+  
+  rmse_lin <- rmse(te$Balance, yhat_lin)
+  
+  fit_bin <- glm(form_bin, data = tr, family = binomial())
+  p_pos <- predict(fit_bin, newdata = te, type = 'response')
+  
+  tr_pos <- tr %>% filter(Balance > 0)
+  fit_gam <- glm(form_gam, data = tr_pos, family = Gamma(link = 'log'))
+  mu_pos <- predict(fit_gam, newdata = te, type = 'response')
+  
+  yhat_hurdle <- p_pos * mu_pos
+  
+  rmse_hurdle <- rmse(te$Balance, yhat_hurdle)
+  
+  te_pos <- te %>% filter(Balance > 0)
+  mu_pos_only <- predict(fit_gam, newdata = te_pos, type = 'response')
+  gdev <- gamma_deviance(te_pos$Balance, mu_pos_only)
+  
+  tibble(
+    fold = i,
+    rmse_linear = rmse_lin,
+    rmse_hurdle = rmse_hurdle,
+    gamma_dev_pos = gdev,
+    best_alpha = alpha(best_idx),
+    best_lambda = best_cv$lambda.min
+  )
+})
+
+out_summary <- out %>%
+  summarise(
+    rmse_linear_mean = mean(rmse_linear),
+    rmse_linear_sd = sd(rmse_linear),
+    rmse_hurdle_mean = mean(rmse_hurdle),
+    rmse_hurdle_sd = sd(rmse_hurdle),
+    gamma_dev_pos_mean = mean(gamma_dev_pos),
+    gamma_dev_pos_sd = sd(gamma_dev_pos)
+  )
+
+out
+out_summary
+```
+We see that when comparing our linear model with the hurdle model, the hurdle model predicts much much better. But, this doesn't tell the full story in regards to how each model is measured. The linear model is designed to optimize in RMSE, where else the GAMMA regression optimizes on likelihood. The metric we are using is not fair as OLS averages on zeros and positives, shrinking predictions toward the mean, this behavior alone reduces squared error where else our Hurdle model explicitly models zeros. A hurdle mode would have to be measured under a metric that measures deviance instead, however that would give the hurdle an advantage because it would correct model the zero inflation and skewed conditional distribution.
+
+The overall key take away we can say, for prediction, the regularized hurdle model performs best. For inference, a hurdle model with a binomial and gamma component better reflects the data generating process and provides interpretable effects as well.
