@@ -1,0 +1,539 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+For this analysis, we will be looking at an extended version of the Salary datas except this one will have around 397 observations. We will be looking at salary data of college professors in a midtown college to determine what features are statistically significant to our response, which is Salary. Once again we will be looking at sex, rank, discipline, years of service, and years since phd. We will be creating several models and then comparing each model's prediction ability in the end.
+```{r}
+library(carData)
+library(lmtest)
+library(alr4)
+library(rsample)
+library(tidymodels)
+library(caret)
+library(dplyr)
+library(yardstick)
+head(Salaries)
+```
+```{r}
+summary(Salaries)
+```
+```{r}
+plot(Salaries)
+```
+```{r}
+num_cols <- names(Salaries)[sapply(Salaries, is.numeric)]
+
+par(mfrow=c(3,4), ask = FALSE)
+for(col in num_cols){
+  hist(Salaries[[col]], xlab = col, ylab = 'Frequency')
+}
+par(mfrow=c(1,1), ask = FALSE)
+```
+We see the data that we are working with and the distribution. We can see that Salary is a bit right skewed, however a simple transformation can alleviate this. We also see that we may have some sort of a correlation between Salary and years of service as well as salay and years since phd. Looking at the summary statistics tells us that the range of Salary may be a bit large and that we could possibly do a log transformation.
+
+One thing we are going to look at once again, the difference in salaries between sexes. For our null hypothesis, we can say that there is no differences in the salaries between the sexes. Our alternative to this would be that males make more than females. We want to do a hypothesis test with both a t-test function as well as a permutation method.
+
+```{r}
+Salaries$yrs_service_plus <- Salaries$yrs.service + 0.1
+Salaries$salary_inv_sqrt <- 1/sqrt(Salaries$salary) 
+Salaries$salary_pwr <- Salaries$salary^(-0.25)
+Salaries$salary_log <- log(Salaries$salary)
+str(Salaries)
+```
+```{r}
+means <- tapply(Salaries$salary, Salaries$sex, mean)
+original_difference <- means[2] - means[1]
+print(means)
+print(paste("Original Difference:", original_difference))
+```
+```{r}
+t.test(x = Salaries$salary[Salaries$sex == 'Male'], y = Salaries$salary[Salaries$sex == 'Female'], alternative = 'greater')
+```
+```{r}
+boots <- NULL
+for( i in 1:10000){
+  new_salary <- sample(Salaries$salary, dim(Salaries)[1], replace = FALSE)
+  salary_df <- data.frame(sex = Salaries$sex, salary = new_salary)
+  new_means <- tapply(salary_df$salary, salary_df$sex, mean)
+  differences <- new_means[2] - new_means[1]
+  boots <- c(boots, differences)
+}
+
+hist(boots, breaks = 20, xlab = 'Mean Difference Distribution', ylab = 'Frequency', main = 'Mean Difference')
+abline(v = original_difference, col = 'red')
+
+```
+```{r}
+pvalue <- original_difference < boots
+print(sum(pvalue)/10000)
+```
+Both tests conclude that we reject the null hypothesis that male and female make the same amount given that the null distribution was true. However, we know that statistical modeling entails much more than just hypothesis testing, especially when we have more features to take account of any variation of data. So, we will begin by building our preliminary model.
+```{r}
+salaryfit <- lm(salary~sex+rank+discipline+yrs.service+yrs.since.phd, data = Salaries)
+print(summary(salaryfit))
+```
+```{r}
+Anova(salaryfit, type = 'II')
+```
+```{r}
+avPlots(salaryfit)
+```
+```{r}
+par(mfrow = c(2,2), ask = FALSE)
+plot(salaryfit)
+```
+```{r}
+residualPlots(salaryfit)
+print(resettest(salaryfit, power = 2:3, type = 'regressor'))
+print(resettest(salaryfit, power = 2:3, type = 'fitted'))
+```
+```{r}
+ncvTest(salaryfit)
+bptest(salaryfit)
+```
+```{r}
+vif(salaryfit)
+```
+```{r}
+outlierTest(salaryfit)
+```
+
+```{r}
+infl <- data.frame(
+  hat = hatvalues(salaryfit),
+  cooks = cooks.distance(salaryfit),
+  rstandard = rstandard(salaryfit),
+  rstudent = rstudent(salaryfit)
+)
+
+infl <- infl[order(infl$cooks, decreasing = TRUE),]
+print(head(infl))
+```
+Looking at several of our diagnostics, we fail to meet almost all of our assumptions save multicollinearity. The graph also clearly show heteroscedasticity. We also see that going from female to male makes no difference, but the ANOVA tells us that sex does matter and years of service does not. However, we can't truly trust it if the assumptions are not met.
+
+We can try to do a multivariate power transformation to see if this will fix any of our issues. We will also add in interactions with all the variables to weed out what is important and what is not.
+```{r}
+summary(powerTransform(cbind(yrs_service_plus, yrs.since.phd, salary)~1, Salaries))
+```
+We have several transformations for our continuous covariates that may deem to be un-interpretable, however we will try to and run these first and see what our diagnostics look like. We can then substitute these for transformations that are a bit more interpretable for any potential audience.
+```{r}
+salarypwr <- lm(I(salary^-0.25)~rank*discipline*sex*I(yrs_service_plus^0.52)*I(yrs.since.phd^0.59), data = Salaries)
+print(summary(salarypwr))
+```
+```{r}
+Anova(salarypwr, type = 'II')
+```
+```{r}
+avPlots(salarypwr, ask = FALSE)
+```
+```{r}
+par(mfrow = c(2,2), ask = FALSE)
+plot(salarypwr)
+```
+```{r}
+residualPlots(salarypwr)
+print(resettest(salarypwr, power = 2:3, type = 'regressor'))
+print(resettest(salarypwr, power = 2:3, type = 'fitted'))
+```
+```{r}
+ncvTest(salarypwr)
+bptest(salarypwr)
+```
+```{r}
+vif(salarypwr)
+```
+```{r}
+outlierTest(salarypwr)
+```
+
+```{r}
+inf <- data.frame(
+  hat = hatvalues(salarypwr),
+  cooks = cooks.distance(salarypwr),
+  rstandard = rstandard(salarypwr),
+  rstudent = rstudent(salarypwr)
+)
+
+infl <- infl[order(infl$cooks, decreasing = TRUE),]
+print(head(infl))
+```
+We see that our diagnostics look a lot better and that we do meet linearity when we test against the fitted values using the linear reset test. We also see that our variance is still heteroscedastic, but it is far more constant than before. Of course we see some multi-collinearity which comes with interactions, but we also see many variables that are not significant. We can look to see about dropping some of these variables and comparing our sub-model with our current model to see if the more complex one is even necessary. We will eliminate sex, ironically, as that seems to be insignificant all across the board, both the main effects and it's interactions. The only instance where sex seems to matter is through it's non-linear relationship with years of service and years since phD. We will remove all instances of sex, entirely, from the model.
+```{r}
+salarypwr_mod <- lm(I(salary^-0.25)~rank+discipline+I(yrs_service_plus^0.52)+I(yrs.since.phd^0.59)+discipline*I(yrs_service_plus^0.52)+discipline*I(yrs.since.phd^0.59)+discipline*I(yrs_service_plus^0.52)*I(yrs.since.phd^0.59)+rank*discipline*I(yrs_service_plus^0.52)*I(yrs.since.phd^0.59), data = Salaries)
+print(summary(salarypwr_mod))
+```
+```{r}
+Anova(salarypwr_mod, type = 'III')
+```
+```{r}
+avPlots(salarypwr_mod, ask = FALSE)
+```
+```{r}
+print(anova(salarypwr_mod, salarypwr))
+```
+
+We see that our ANOVA concludes that there is no difference between our two models so we will go with the smaller one and do further analysis and diagnostics to make sure that assumptions are met even better or worse. Not only that, the simpler model seems to have a better adjusted R-2.
+```{r}
+par(mfrow=c(2,2))
+plot(salarypwr_mod)
+```
+```{r}
+residualPlots(salarypwr_mod, ask = FALSE)
+print(resettest(salarypwr_mod, power = 2:3, type = 'regressor'))
+print(resettest(salarypwr_mod, power = 2:3, type = 'fitted'))
+```
+```{r}
+ncvTest(salarypwr_mod)
+bptest(salarypwr_mod)
+```
+```{r}
+vif(salarypwr_mod)
+```
+```{r}
+outlierTest(salarypwr_mod)
+```
+
+```{r}
+infl <- data.frame(
+  hat = hatvalues(salarypwr_mod),
+  cooks = cooks.distance(salarypwr_mod),
+  rstudent = rstudent(salarypwr_mod),
+  rstandard = rstandard(salarypwr_mod)
+)
+
+infl <- infl[order(infl$cooks, decreasing = TRUE),]
+print(head(infl))
+```
+Our residual plots look good, there may be slight clustering, however, our assumption for linearity has been met both through the fitted values and the regressors. We violate our assumption of homoscedasticity even further, however. We do not see any influence points that cause us any concern and our qq-norm plot looks good with a few deviances from the tails. Of course, we have multi-collinearity due to interaction terms.
+
+Now that we can go with our simpler power-model. What if we try building a model with exponent values that are a bit more interpretable?
+```{r}
+salarysqrt <- lm(salary_inv_sqrt~rank*discipline*sex*sqrt(yrs.service)*sqrt(yrs.since.phd), data = Salaries)
+print(summary(salarysqrt))
+```
+```{r}
+Anova(salarysqrt, type = 'III')
+```
+```{r}
+avPlots(salarysqrt, ask = FALSE)
+```
+```{r}
+par(mfrow = c(2,2), ask = FALSE)
+plot(salarysqrt)
+```
+```{r}
+residualPlots(salarysqrt, ask = FALSE)
+print(resettest(salarysqrt, power = 2:3, type = 'regressor'))
+print(resettest(salarysqrt, power = 2:3, type = 'fitted'))
+```
+```{r}
+ncvTest(salarysqrt)
+bptest(salarysqrt)
+```
+```{r}
+vif(salarysqrt)
+```
+```{r}
+outlierTest(salarysqrt)
+```
+
+```{r}
+inf <- data.frame(
+  hat = hatvalues(salarysqrt),
+  cooks = cooks.distance(salarysqrt),
+  rstandard = rstandard(salarysqrt),
+  rstudent = rstudent(salarysqrt)
+)
+
+infl <- infl[order(infl$cooks, decreasing = TRUE),]
+print(head(infl))
+```
+We see that this model performs pretty similarly to the power-model with a better R-squared. This makes it a more interpretable. Now, we will eliminate the variables that seem insignificant and compare a sub-model to this one. Once again, sex seems to be the odd man out, which contradicts our t-test and permutation we did at the very beginning saying that there was a difference in pay between sexes.
+```{r}
+salarysqrt_mod <- lm(salary_inv_sqrt~rank+discipline+sqrt(yrs.service)+sqrt(yrs.since.phd)+discipline*sqrt(yrs.service)+discipline*sqrt(yrs.since.phd)+sqrt(yrs.service)*sqrt(yrs.since.phd)+discipline*sqrt(yrs.service)*sqrt(yrs.since.phd)+rank*discipline*sqrt(yrs.service)*sqrt(yrs.since.phd), data = Salaries)
+
+print(summary(salarysqrt_mod))
+```
+```{r}
+Anova(salarysqrt_mod, type = 'III')
+```
+```{r}
+avPlots(salarysqrt_mod, ask = FALSE)
+```
+```{r}
+anova(salarysqrt_mod, salarysqrt)
+```
+Our ANOVA tells us that the sub-model is the way to go, so we shall proceed.
+```{r}
+par(mfrow = c(2,2), ask = FALSE)
+plot(salarysqrt_mod)
+```
+```{r}
+residualPlots(salarysqrt_mod, ask = FALSE)
+print(resettest(salarysqrt_mod, power = 2:3, type = 'regressor'))
+print(resettest(salarysqrt_mod, power = 2:3, type = 'fitted'))
+```
+```{r}
+ncvTest(salarysqrt_mod)
+bptest(salarysqrt_mod)
+```
+```{r}
+vif(salarysqrt_mod)
+```
+```{r}
+outlierTest(salarysqrt_mod)
+```
+
+```{r}
+infl <- data.frame(
+  hat = hatvalues(salarysqrt_mod),
+  cooks = cooks.distance(salarysqrt_mod),
+  rstudent = rstudent(salarysqrt_mod),
+  rstandard = rstandard(salarysqrt_mod)
+)
+
+infl <- infl[order(infl$cooks, decreasing = TRUE),]
+
+print(head(infl))
+```
+This performs very similar to the modified power-model, but even better! In fact this is our best model so far as far as meeting our linear regression assumptions.
+
+We will try one last model, this time with a log calculation on the response variable, salary, as well as log transformations on the continuous predictor variables.
+```{r}
+salarylog <- lm(log(salary)~rank*discipline*sex*log(yrs_service_plus)*log(yrs.since.phd), data = Salaries)
+print(summary(salarylog))
+```
+```{r}
+Anova(salarylog, type = 'III')
+```
+```{r}
+avPlots(salarylog, ask = FALSE)
+```
+```{r}
+par(mfrow = c(2,2), ask = FALSE)
+plot(salarylog)
+```
+```{r}
+residualPlots(salarylog, ask = FALSE)
+print(resettest(salarylog, power = 2:3, type = 'regressor'))
+print(resettest(salarylog, power = 2:3, type = 'fitted'))
+```
+```{r}
+ncvTest(salarylog)
+bptest(salarylog)
+```
+```{r}
+vif(salarylog)
+```
+```{r}
+outlierTest(salarylog)
+```
+
+```{r}
+infl <- data.frame(
+  hat = hatvalues(salarylog),
+  cooks = cooks.distance(salarylog),
+  rstudent = rstudent(salarylog),
+  rstandard = rstandard(salarylog)
+)
+
+infl <- infl[order(infl$cooks, decreasing = TRUE),]
+print(head(infl))
+```
+This one does not perform as bad as I thought, it violates the same thing the power-model and the square-root-models do in similar quantities. The R-squared is worse here than on the square-root-model. We will once again reduce some of the variables, but this time, I will chose to keep sex in seeing as how the first two models are fundamentally very similar, I want to see if keeping sex changes anything.
+```{r}
+salarylog_mod <- lm(log(salary)~rank+discipline+log(yrs_service_plus)+log(yrs.since.phd)+discipline*log(yrs_service_plus)+discipline*log(yrs.since.phd)+log(yrs_service_plus)*log(yrs.since.phd)+discipline*log(yrs_service_plus)*log(yrs.since.phd)+rank*discipline*log(yrs_service_plus)*log(yrs.since.phd)+rank*sex*log(yrs_service_plus)*log(yrs.since.phd), data = Salaries)
+print(summary(salarylog_mod))
+```
+```{r}
+Anova(salarylog_mod, type = 'III')
+```
+```{r}
+avPlots(salarylog_mod, ask = FALSE)
+```
+```{r}
+print(anova(salarylog_mod, salarylog))
+```
+
+Our ANOVA tells us that the sub-model is fine to go with.
+```{r}
+par(mfrow = c(2,2))
+plot(salarylog_mod)
+```
+```{r}
+residualPlots(salarylog_mod, ask = FALSE)
+print(resettest(salarylog_mod, power = 2:3, type = 'regressor'))
+print(resettest(salarylog_mod, power = 2:3, type = 'fitted'))
+```
+```{r}
+ncvTest(salarylog_mod)
+bptest(salarylog_mod)
+```
+```{r}
+vif(salarylog_mod)
+```
+```{r}
+outlierTest(salarylog_mod)
+```
+```{r}
+inf <- data.frame(
+  hat = hatvalues(salarylog_mod),
+  cooks = cooks.distance(salarylog_mod),
+  rstandard = rstandard(salarylog_mod),
+  rstudent = rstudent(salarylog_mod)
+)
+
+inlf <- infl[order(infl$cooks, decreasing = TRUE),]
+print(head(infl))
+```
+
+```{r}
+print(anova(salarylog_mod, salarylog))
+```
+Finally, we see that this modified log-model performs almost just as well as the other submodels. We also see that sex is significant through its interactions with rank, years since phD, and years of service. When trying this same interactions in other models, it was still insignificant, only with a log response, does sex seem to be significant.
+
+The next thing we will do is test how accurately each of the models predict. Once we get our predictions of how they explain outside data, using cross validation, we will also use the mean squared error to measure how far off our predictions we are. Since our model responses are on different scales, we will need to compare them all on the same response scale, so we will be using regular Salary in dollars to compare our models.
+```{r}
+
+formula_log <- salary~rank+discipline+log(yrs_service_plus)+log(yrs.since.phd)+discipline*log(yrs_service_plus)+discipline*log(yrs.since.phd)+log(yrs_service_plus)*log(yrs.since.phd)+discipline*log(yrs_service_plus)*log(yrs.since.phd)+rank*discipline*log(yrs_service_plus)*log(yrs.since.phd)+rank*sex*log(yrs_service_plus)*log(yrs.since.phd)
+
+
+
+formula_sqrt <- salary~rank+discipline+sqrt(yrs.service)+sqrt(yrs.since.phd)+discipline*sqrt(yrs.service)+discipline*sqrt(yrs.since.phd)+sqrt(yrs.service)*sqrt(yrs.since.phd)+discipline*sqrt(yrs.service)*sqrt(yrs.since.phd)+rank*discipline*sqrt(yrs.service)*sqrt(yrs.since.phd)
+
+
+
+
+formula_pwr <- salary~rank+discipline+I(yrs_service_plus^0.52)+I(yrs.since.phd^0.59)+discipline*I(yrs_service_plus^0.52)+discipline*I(yrs.since.phd^0.59)+discipline*I(yrs_service_plus^0.52)*I(yrs.since.phd^0.59)+rank*discipline*I(yrs_service_plus^0.52)*I(yrs.since.phd^0.59)
+
+
+split_obj <- initial_split(Salaries, prop = .80)
+salaries_train <- training(split_obj)
+salaries_test <- testing(split_obj)
+
+enet_pipe <- linear_reg(penalty = tune(), mixture = tune()) %>% set_engine('glmnet')
+
+
+log_flow <- workflow() %>% add_model(enet_pipe) %>% add_formula(formula_log)
+
+sqrt_flow <- workflow() %>% add_model(enet_pipe) %>% add_formula(formula_sqrt)
+
+pwr_flow <- workflow() %>% add_model(enet_pipe) %>% add_formula(formula_pwr) 
+
+folds <- vfold_cv(salaries_train, v = 10)
+
+mset <- metric_set(rsq, mae, rmse)
+
+grid <- grid_latin_hypercube(
+  penalty(range = c(-6, 1)),
+  mixture(range = c(0, 1)),
+  size = 50
+)
+
+ctrl <- control_grid(save_pred = TRUE)
+
+log_full <- tune_grid(
+  log_flow, resamples = folds, grid = grid,
+  metrics = mset, control = ctrl
+)
+
+sqrt_full <- tune_grid(
+  sqrt_flow, resamples = folds, grid = grid,
+  metrics = mset, control = ctrl
+)
+
+pwr_full <- tune_grid(
+  pwr_flow, resamples = folds, grid = grid,
+  metrics = mset, control = ctrl
+)
+
+
+best_log <- select_best(log_full, metric = 'rsq')
+best_sqrt <- select_best(sqrt_full, metric = 'rsq')
+best_pwr <- select_best(pwr_full, metric = 'rsq')
+
+print(best_log)
+print(best_sqrt)
+print(best_pwr)
+```
+```{r}
+print(collect_metrics(log_full)[collect_metrics(log_full)$penalty == best_log$penalty,])
+print(collect_metrics(sqrt_full)[collect_metrics(sqrt_full)$penalty == best_sqrt$penalty,])
+print(collect_metrics(pwr_full)[collect_metrics(pwr_full)$penalty == best_pwr$penalty,])
+```
+
+```{r}
+eps <- 1e-12
+
+inv_log <- function(yt){
+  exp(yt)
+}
+
+inv_inv_sqrt <- function(yt){
+  yt <- pmax(yt, eps)
+  (1 / yt)^2
+}
+
+inv_neg_quarter <- function(yt){
+  yt <- pmax(yt, eps)
+  1 / (yt^4)
+}
+
+full_finalize_log <- finalize_workflow(log_flow, best_log) %>% fit(salaries_train)
+full_finalize_sqrt <- finalize_workflow(sqrt_flow, best_sqrt) %>% fit(salaries_train)
+full_finalize_pwr <- finalize_workflow(pwr_flow, best_pwr) %>% fit(salaries_train)
+
+pred_log <- predict(full_finalize_log, salaries_test) %>% bind_cols(salaries_test %>% select(salary))
+
+
+pred_sqrt <- predict(full_finalize_sqrt, salaries_test) %>% bind_cols(salaries_test %>% select(salary))
+
+
+pred_pwr <- predict(full_finalize_pwr, salaries_test) %>% bind_cols(salaries_test %>% select(salary))
+
+
+print(metrics(pred_log, truth = salary, estimate = .pred))
+print(metrics(pred_sqrt, truth = salary, estimate = .pred))
+print(metrics(pred_pwr, truth = salary, estimate = .pred))
+```
+
+
+
+
+
+
+
+```{r}
+tol <- 1e-6
+
+coef_log <- full_finalize_log %>% extract_fit_parsnip %>% tidy() %>% filter(term != '(Intercept)')
+
+chosen_log <- coef_log %>% filter(abs(estimate) > tol)
+neglected_log <- coef_log %>% filter(abs(estimate) <= tol)
+
+print(chosen_log)
+print(neglected_log)
+```
+
+```{r}
+coef_sqrt <- full_finalize_sqrt %>% extract_fit_parsnip %>% tidy() %>% filter(term != '(Intercept)')
+
+chosen_sqrt <- coef_sqrt %>% filter(abs(estimate) > tol)
+neglected_sqrt <- coef_sqrt %>% filter(abs(estimate) <= tol)
+
+print(chosen_sqrt)
+print(neglected_sqrt)
+```
+
+```{r}
+coef_pwr <- full_finalize_pwr %>% extract_fit_parsnip %>% tidy() %>% filter(term != '(Intercept)')
+
+chosen_pwr <- coef_pwr %>% filter(abs(estimate) > tol)
+neglected_pwr <- coef_pwr %>% filter(abs(estimate) <= tol)
+
+print(chosen_pwr)
+print(neglected_pwr)
+```
+
+Here, we see that the power-model seems to predict the best all around the board. Both when we do 10-fold and when we do a hold out. We see that not only does the power-model has the lowest Mean Squared Error, it also consistently has the highest R-squared, so, it seems to explain more of the variation of the data. However, in general, for prediction we would probably rather use something like a decision tree or gradient boosting model for more accurate predictions. 
